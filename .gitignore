@@ -1,0 +1,5 @@
+/vendor/
+/runtime/logs/*.log
+.env
+.phpunit.result.cache
+composer.lock

@@ -1,0 +1,55 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/app
+      - vendor:/app/vendor
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_DB: mrpp
+      MYSQL_USER: mrpp
+      MYSQL_PASS: mrpp_secret
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      JWT_KEY: /app/runtime/jwt.key
+      YII_DEBUG: "true"
+      YII_ENV: dev
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: mrpp
+      MYSQL_USER: mrpp
+      MYSQL_PASSWORD: mrpp_secret
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 2s
+      retries: 5
+
+volumes:
+  vendor:
+  mysql_data:

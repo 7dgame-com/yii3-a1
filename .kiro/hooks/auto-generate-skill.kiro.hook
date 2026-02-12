@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "name": "Auto Generate Skill",
+  "description": "当 agent 执行完成后，自动检查是否有新创建或修改的源代码文件，如果有则在 .kiro/skills/ 目录下生成或更新对应的 skill 文件，总结实现的功能、关键设计决策和使用方式。",
+  "version": "1",
+  "when": {
+    "type": "agentStop"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "检查本次执行中是否创建或修改了 src/ 目录下的源代码文件。如果有，请在 .kiro/skills/ 目录下生成或更新一个对应的 skill markdown 文件，内容包括：1) 实现了什么功能 2) 关键设计决策和架构说明 3) 依赖关系 4) 使用示例或注意事项。skill 文件名使用 kebab-case，与功能模块对应。如果本次没有代码变更则跳过。"
+  }
+}

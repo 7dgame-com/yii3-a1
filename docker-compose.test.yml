@@ -1,0 +1,86 @@
+# Side-by-side testing: Yii2 (port 8081) vs Yii3 (port 8080)
+# Usage: docker compose -f docker-compose.test.yml up --build
+services:
+  # =========================================================================
+  # Yii3 API (new version) — port 8080
+  # =========================================================================
+  yii3-app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_DB: mrpp
+      MYSQL_USER: mrpp
+      MYSQL_PASS: mrpp_secret
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      JWT_KEY: /app/runtime/jwt.key
+      YII_DEBUG: "true"
+      YII_ENV: dev
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # =========================================================================
+  # Yii2 API (original version) — port 8081
+  # =========================================================================
+  yii2-app:
+    build:
+      context: /tmp/mrpp-api-yii2
+      dockerfile: ${PWD}/docker/yii2/Dockerfile
+    ports:
+      - "8081:80"
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_DB: mrpp
+      MYSQL_USERNAME: mrpp
+      MYSQL_PASSWORD: mrpp_secret
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      JWT_KEY: /var/www/html/api/runtime/jwt.key
+      YII_ENV: dev
+      YII_DEBUG: "true"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # =========================================================================
+  # Shared services
+  # =========================================================================
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: mrpp
+      MYSQL_USER: mrpp
+      MYSQL_PASSWORD: mrpp_secret
+    ports:
+      - "3307:3306"
+    volumes:
+      - test_mysql_data:/var/lib/mysql
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 2s
+      retries: 5
+
+volumes:
+  test_mysql_data:
