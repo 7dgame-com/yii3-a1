@@ -2,7 +2,7 @@
     "name": "mrpp/api",
     "description": "MrPP - Mixed Reality Platform REST API (Yii3)",
     "type": "project",
-    "license": "proprietary",
+    "license": "GPL-3.0-only",
     "minimum-stability": "dev",
     "prefer-stable": true,
     "require": {
