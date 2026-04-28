@@ -1,0 +1,148 @@
+name: CI
+
+on:
+  push:
+    branches: ["*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TENCENT_REGISTRY: hkccr.ccs.tencentyun.com
+  TENCENT_IMAGE_NAME: gdgeek/yii3-a1
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: mrpp
+          MYSQL_USER: mrpp
+          MYSQL_PASSWORD: mrpp_secret
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: pdo, pdo_mysql, redis, zip
+          coverage: none
+          tools: composer:v2
+
+      - name: Configure CA Certificates For Composer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ca-certificates default-mysql-client
+          sudo update-ca-certificates
+
+          if [ -n "${{ secrets.CUSTOM_CA_CERT_B64 }}" ]; then
+            echo "${{ secrets.CUSTOM_CA_CERT_B64 }}" | base64 -d | sudo tee /usr/local/share/ca-certificates/custom-ca.crt > /dev/null
+            sudo update-ca-certificates
+          fi
+
+          composer config -g cafile /etc/ssl/certs/ca-certificates.crt
+          composer config -g secure-http true
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction --optimize-autoloader
+
+      - name: Prepare runtime
+        run: |
+          mkdir -p runtime
+          echo "ci-jwt-secret-key-do-not-use-in-production" > runtime/jwt.key
+
+      - name: Import test database
+        run: mysql -h 127.0.0.1 -P 3306 -u root -proot mrpp < docker/init.sql
+
+      - name: Run PHPUnit tests
+        env:
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_DB: mrpp
+          MYSQL_USER: mrpp
+          MYSQL_PASS: mrpp_secret
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: "6379"
+          REDIS_DB: "0"
+          JWT_KEY: runtime/jwt.key
+          YII_DEBUG: "true"
+          YII_ENV: test
+        run: composer test
+
+  build:
+    name: Build Docker image
+    runs-on: ubuntu-latest
+    needs: test
+    if: >-
+      github.event_name == 'push' && (
+        github.ref == 'refs/heads/publish' ||
+        github.ref == 'refs/heads/main' ||
+        github.ref == 'refs/heads/develop'
+      )
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Tencent Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.TENCENT_REGISTRY }}
+          username: ${{ secrets.TENCENT_DOCKER_USERNAME || secrets.TENCENT_REGISTRY_USERNAME }}
+          password: ${{ secrets.TENCENT_DOCKER_PASSWORD || secrets.TENCENT_REGISTRY_PASSWORD }}
+
+      - name: Write Git Commit Hash
+        run: echo "${{ github.sha }}" > GIT_COMMIT
+
+      - name: Write Build Time
+        run: TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S' > BUILD_TIME
+
+      - name: Build and Push Docker Image
+        run: |
+          BRANCH_NAME=$(echo "${{ github.ref }}" | sed 's|refs/heads/||' | sed 's|/|-|g')
+          IMAGE="${TENCENT_REGISTRY}/${TENCENT_IMAGE_NAME}:${BRANCH_NAME}"
+
+          docker build -t "${IMAGE}" .
+          docker push "${IMAGE}"
+
+          if [ "${BRANCH_NAME}" = "publish" ]; then
+            docker tag "${IMAGE}" "${TENCENT_REGISTRY}/${TENCENT_IMAGE_NAME}:latest"
+            docker push "${TENCENT_REGISTRY}/${TENCENT_IMAGE_NAME}:latest"
+          fi
+
+  deploy:
+    name: Deploy notification
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/publish'
+    steps:
+      - name: Deploy Notification
+        run: echo "publish branch deployed successfully"
