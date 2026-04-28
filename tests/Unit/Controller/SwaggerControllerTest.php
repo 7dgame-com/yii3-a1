@@ -348,6 +348,50 @@ final class SwaggerControllerTest extends TestCase
         $this->assertNotNull($decoded, 'Response body should be valid JSON');
     }
 
+    /**
+     * Test that /swagger/json-schema exposes all public API routes.
+     * Validates: Requirement 7.3
+     */
+    public function testJsonSchemaIncludesApplicationRoutes(): void
+    {
+        $controller = new SwaggerController(
+            $this->responseFactory,
+            $this->streamFactory,
+            'admin',
+            'secret',
+        );
+
+        $capturedBody = null;
+        $capturedStatusCode = null;
+        $capturedHeaders = [];
+        $this->setupResponseCaptureWithBody($capturedBody, $capturedStatusCode, $capturedHeaders);
+
+        $request = $this->createRequestWithAuth('');
+
+        $controller->jsonSchema($request);
+
+        $decoded = json_decode((string) $capturedBody, true);
+        $paths = array_keys($decoded['paths'] ?? []);
+
+        $this->assertContains('/v1/auth/login', $paths);
+        $this->assertContains('/v1/auth/refresh', $paths);
+        $this->assertContains('/v1/auth/key-to-token', $paths);
+        $this->assertContains('/v1/server/test', $paths);
+        $this->assertContains('/v1/server/public', $paths);
+        $this->assertContains('/v1/server/checkin', $paths);
+        $this->assertContains('/v1/server/private', $paths);
+        $this->assertContains('/v1/server/group', $paths);
+        $this->assertContains('/v1/server/tags', $paths);
+        $this->assertContains('/v1/server/snapshot', $paths);
+        $this->assertContains('/v2/snapshots', $paths);
+        $this->assertContains('/v2/snapshots/{id}', $paths);
+        $this->assertContains('/v2/tags', $paths);
+        $this->assertContains('/v2/system', $paths);
+        $this->assertContains('/health', $paths);
+        $this->assertContains('/swagger', $paths);
+        $this->assertContains('/swagger/json-schema', $paths);
+    }
+
     // ========================================================================
     // Helpers
     // ========================================================================

@@ -25,6 +25,249 @@ use Psr\Http\Message\StreamFactoryInterface;
     version: '1.0.0',
     description: 'Mixed Reality Platform REST API',
 )]
+#[OA\Tag(name: 'Authentication', description: 'Authentication')]
+#[OA\Tag(name: 'V1 Server', description: 'Yii2-compatible V1 server endpoints')]
+#[OA\Tag(name: 'V2', description: 'V2 snapshot, tag, and system endpoints')]
+#[OA\Tag(name: 'System', description: 'Service health and status endpoints')]
+#[OA\Tag(name: 'Documentation', description: 'Documentation')]
+#[OA\SecurityScheme(
+    securityScheme: 'bearerAuth',
+    type: 'http',
+    description: 'JWT access token returned by the authentication endpoints.',
+    bearerFormat: 'JWT',
+    scheme: 'bearer',
+)]
+#[OA\Post(
+    path: '/v1/auth/login',
+    operationId: 'v1AuthLogin',
+    summary: 'Authenticate with username and password',
+    tags: ['Authentication'],
+    requestBody: new OA\RequestBody(
+        required: true,
+        content: new OA\JsonContent(
+            required: ['username', 'password'],
+            properties: [
+                new OA\Property(property: 'username', type: 'string'),
+                new OA\Property(property: 'password', type: 'string', format: 'password'),
+            ],
+            type: 'object',
+        ),
+    ),
+    responses: [
+        new OA\Response(response: 200, description: 'Authenticated'),
+        new OA\Response(response: 400, description: 'Invalid request'),
+    ],
+)]
+#[OA\Post(
+    path: '/v1/auth/refresh',
+    operationId: 'v1AuthRefresh',
+    summary: 'Refresh an access token',
+    tags: ['Authentication'],
+    requestBody: new OA\RequestBody(
+        required: true,
+        content: new OA\JsonContent(
+            required: ['refreshToken'],
+            properties: [
+                new OA\Property(property: 'refreshToken', type: 'string'),
+            ],
+            type: 'object',
+        ),
+    ),
+    responses: [
+        new OA\Response(response: 200, description: 'Token refreshed'),
+        new OA\Response(response: 400, description: 'Invalid request'),
+    ],
+)]
+#[OA\Post(
+    path: '/v1/auth/key-to-token',
+    operationId: 'v1AuthKeyToToken',
+    summary: 'Exchange a linked key for tokens',
+    tags: ['Authentication'],
+    requestBody: new OA\RequestBody(
+        required: true,
+        content: new OA\JsonContent(
+            required: ['key'],
+            properties: [
+                new OA\Property(property: 'key', type: 'string'),
+            ],
+            type: 'object',
+        ),
+    ),
+    responses: [
+        new OA\Response(response: 200, description: 'Authenticated'),
+        new OA\Response(response: 400, description: 'Invalid request'),
+    ],
+)]
+#[OA\Get(
+    path: '/v1/server/test',
+    operationId: 'v1ServerTest',
+    summary: 'Test response',
+    tags: ['V1 Server'],
+    responses: [
+        new OA\Response(response: 200, description: 'Test response'),
+    ],
+)]
+#[OA\Get(
+    path: '/v1/server/public',
+    operationId: 'v1ServerPublic',
+    summary: 'List public snapshots',
+    tags: ['V1 Server'],
+    parameters: [
+        new OA\QueryParameter(name: 'pageSize', description: 'Page size', schema: new OA\Schema(type: 'integer')),
+        new OA\QueryParameter(name: 'page', description: 'Page number', schema: new OA\Schema(type: 'integer')),
+        new OA\QueryParameter(name: 'tags', description: 'Comma-separated tag IDs', schema: new OA\Schema(type: 'string')),
+        new OA\QueryParameter(name: 'expand', description: 'Comma-separated expansion fields', schema: new OA\Schema(type: 'string')),
+    ],
+    responses: [
+        new OA\Response(response: 200, description: 'Public snapshots'),
+    ],
+)]
+#[OA\Get(
+    path: '/v1/server/checkin',
+    operationId: 'v1ServerCheckin',
+    summary: 'List checkin snapshots',
+    tags: ['V1 Server'],
+    parameters: [
+        new OA\QueryParameter(name: 'pageSize', description: 'Page size', schema: new OA\Schema(type: 'integer')),
+        new OA\QueryParameter(name: 'page', description: 'Page number', schema: new OA\Schema(type: 'integer')),
+        new OA\QueryParameter(name: 'tags', description: 'Comma-separated tag IDs', schema: new OA\Schema(type: 'string')),
+        new OA\QueryParameter(name: 'expand', description: 'Comma-separated expansion fields', schema: new OA\Schema(type: 'string')),
+    ],
+    responses: [
+        new OA\Response(response: 200, description: 'Checkin snapshots'),
+    ],
+)]
+#[OA\Get(
+    path: '/v1/server/private',
+    operationId: 'v1ServerPrivate',
+    summary: 'List private snapshots for the authenticated user',
+    tags: ['V1 Server'],
+    security: [['bearerAuth' => []]],
+    parameters: [
+        new OA\QueryParameter(name: 'pageSize', description: 'Page size', schema: new OA\Schema(type: 'integer')),
+        new OA\QueryParameter(name: 'page', description: 'Page number', schema: new OA\Schema(type: 'integer')),
+        new OA\QueryParameter(name: 'tags', description: 'Comma-separated tag IDs', schema: new OA\Schema(type: 'string')),
+        new OA\QueryParameter(name: 'expand', description: 'Comma-separated expansion fields', schema: new OA\Schema(type: 'string')),
+    ],
+    responses: [
+        new OA\Response(response: 200, description: 'Private snapshots'),
+        new OA\Response(response: 401, description: 'Unauthorized'),
+    ],
+)]
+#[OA\Get(
+    path: '/v1/server/group',
+    operationId: 'v1ServerGroup',
+    summary: 'List group snapshots for the authenticated user',
+    tags: ['V1 Server'],
+    security: [['bearerAuth' => []]],
+    parameters: [
+        new OA\QueryParameter(name: 'pageSize', description: 'Page size', schema: new OA\Schema(type: 'integer')),
+        new OA\QueryParameter(name: 'page', description: 'Page number', schema: new OA\Schema(type: 'integer')),
+        new OA\QueryParameter(name: 'tags', description: 'Comma-separated tag IDs', schema: new OA\Schema(type: 'string')),
+        new OA\QueryParameter(name: 'expand', description: 'Comma-separated expansion fields', schema: new OA\Schema(type: 'string')),
+    ],
+    responses: [
+        new OA\Response(response: 200, description: 'Group snapshots'),
+        new OA\Response(response: 401, description: 'Unauthorized'),
+    ],
+)]
+#[OA\Get(
+    path: '/v1/server/tags',
+    operationId: 'v1ServerTags',
+    summary: 'List tags',
+    tags: ['V1 Server'],
+    parameters: [
+        new OA\QueryParameter(name: 'type', description: 'Tag type, defaults to Classify', schema: new OA\Schema(type: 'string')),
+    ],
+    responses: [
+        new OA\Response(response: 200, description: 'Tags'),
+    ],
+)]
+#[OA\Get(
+    path: '/v1/server/snapshot',
+    operationId: 'v1ServerSnapshot',
+    summary: 'Get one snapshot by id or verse_id',
+    tags: ['V1 Server'],
+    parameters: [
+        new OA\QueryParameter(name: 'id', description: 'Snapshot ID', schema: new OA\Schema(type: 'integer')),
+        new OA\QueryParameter(name: 'verse_id', description: 'Verse ID', schema: new OA\Schema(type: 'integer')),
+        new OA\QueryParameter(name: 'expand', description: 'Comma-separated expansion fields', schema: new OA\Schema(type: 'string')),
+    ],
+    responses: [
+        new OA\Response(response: 200, description: 'Snapshot'),
+        new OA\Response(response: 400, description: 'Invalid request'),
+    ],
+)]
+#[OA\Get(
+    path: '/v2/snapshots',
+    operationId: 'v2SnapshotsIndex',
+    summary: 'List snapshots by scope',
+    description: 'scope=group and scope=private require a JWT bearer token.',
+    tags: ['V2'],
+    parameters: [
+        new OA\QueryParameter(name: 'scope', description: 'Snapshot scope', schema: new OA\Schema(type: 'string', enum: ['public', 'checkin', 'group', 'private'])),
+        new OA\QueryParameter(name: 'pageSize', description: 'Page size', schema: new OA\Schema(type: 'integer')),
+        new OA\QueryParameter(name: 'page', description: 'Page number', schema: new OA\Schema(type: 'integer')),
+        new OA\QueryParameter(name: 'tags', description: 'Comma-separated tag IDs', schema: new OA\Schema(type: 'string')),
+        new OA\QueryParameter(name: 'expand', description: 'Comma-separated expansion fields', schema: new OA\Schema(type: 'string')),
+    ],
+    responses: [
+        new OA\Response(response: 200, description: 'Snapshots'),
+        new OA\Response(response: 400, description: 'Invalid scope'),
+        new OA\Response(response: 403, description: 'Login required'),
+    ],
+)]
+#[OA\Get(
+    path: '/v2/snapshots/{id}',
+    operationId: 'v2SnapshotsView',
+    summary: 'Get one snapshot by ID',
+    tags: ['V2'],
+    parameters: [
+        new OA\PathParameter(name: 'id', description: 'Snapshot ID', required: true, schema: new OA\Schema(type: 'integer')),
+        new OA\QueryParameter(name: 'expand', description: 'Comma-separated expansion fields', schema: new OA\Schema(type: 'string')),
+    ],
+    responses: [
+        new OA\Response(response: 200, description: 'Snapshot'),
+        new OA\Response(response: 404, description: 'Snapshot not found'),
+    ],
+)]
+#[OA\Get(
+    path: '/v2/tags',
+    operationId: 'v2TagsIndex',
+    summary: 'List tags',
+    tags: ['V2'],
+    responses: [
+        new OA\Response(response: 200, description: 'Tags'),
+    ],
+)]
+#[OA\Get(
+    path: '/v2/system',
+    operationId: 'v2SystemIndex',
+    summary: 'Get system status',
+    tags: ['System'],
+    responses: [
+        new OA\Response(response: 200, description: 'System status'),
+    ],
+)]
+#[OA\Head(
+    path: '/v2/system',
+    operationId: 'v2SystemHead',
+    summary: 'Get system status headers',
+    tags: ['System'],
+    responses: [
+        new OA\Response(response: 200, description: 'System status'),
+    ],
+)]
+#[OA\Get(
+    path: '/health',
+    operationId: 'health',
+    summary: 'Check database and Redis health',
+    tags: ['System'],
+    responses: [
+        new OA\Response(response: 200, description: 'Healthy'),
+        new OA\Response(response: 503, description: 'Unhealthy'),
+    ],
+)]
 final class SwaggerController
 {
     private string $username;
@@ -49,6 +292,15 @@ final class SwaggerController
      *
      * @see Requirements 7.1, 7.2
      */
+    #[OA\Get(
+        path: '/swagger',
+        summary: 'Get Swagger UI',
+        tags: ['Documentation'],
+        responses: [
+            new OA\Response(response: 200, description: 'Swagger UI'),
+            new OA\Response(response: 401, description: 'Unauthorized'),
+        ],
+    )]
     public function index(ServerRequestInterface $request): ResponseInterface
     {
         if (!$this->authenticate($request)) {
