@@ -6,6 +6,7 @@ namespace App\Tests\Unit\Config;
 
 use App\Controller\HealthController;
 use App\Controller\SwaggerController;
+use App\Controller\DebugController;
 use App\Controller\V1\AuthController;
 use App\Controller\V1\ServerController;
 use App\Controller\V2\SnapshotController;
@@ -51,8 +52,8 @@ final class RoutesTest extends TestCase
 
     public function testTotalRouteCount(): void
     {
-        // 3 auth + 7 server + 4 v2 + 1 health + 2 swagger = 17
-        $this->assertCount(17, $this->routes);
+        // 3 auth + 7 server + 4 v2 + 1 health + 2 swagger + 1 debug = 18
+        $this->assertCount(18, $this->routes);
     }
 
     // =========================================================================
@@ -198,6 +199,18 @@ final class RoutesTest extends TestCase
     }
 
     // =========================================================================
+    // Debug Route
+    // =========================================================================
+
+    public function testDebugSnapshotRoute(): void
+    {
+        $route = $this->findRouteByName('debug.snapshot');
+        $this->assertNotNull($route, 'Route debug.snapshot should exist');
+        $this->assertSame('/debug/snapshot', $route->getData('pattern'));
+        $this->assertSame(['GET'], $route->getData('methods'));
+    }
+
+    // =========================================================================
     // Swagger Routes
     // =========================================================================
 
@@ -237,6 +250,7 @@ final class RoutesTest extends TestCase
             'v2.tags.index',
             'v2.system.index',
             'health',
+            'debug.snapshot',
             'swagger.index',
             'swagger.json-schema',
         ];
@@ -292,6 +306,7 @@ final class RoutesTest extends TestCase
             '/v2/tags',
             '/v2/system',
             '/health',
+            '/debug/snapshot',
             '/swagger',
             '/swagger/json-schema',
         ];

@@ -7,6 +7,7 @@ use App\Search\TagsSearch;
 use App\Service\HealthCheckService;
 use App\Service\PaginationService;
 use App\Service\RefreshTokenService;
+use App\Service\SnapshotDiagnosticsService;
 use App\Service\SnapshotQueryService;
 use Predis\Client as RedisClient;
 use Yiisoft\Cache\CacheInterface as YiiCacheInterface;
@@ -36,6 +37,12 @@ return [
         '__construct()' => [
             'db' => \Yiisoft\Definitions\Reference::to(ConnectionInterface::class),
             'redis' => \Yiisoft\Definitions\Reference::to(RedisClient::class),
+        ],
+    ],
+    SnapshotDiagnosticsService::class => [
+        'class' => SnapshotDiagnosticsService::class,
+        '__construct()' => [
+            'db' => \Yiisoft\Definitions\Reference::to(ConnectionInterface::class),
         ],
     ],
 ];
