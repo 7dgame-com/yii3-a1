@@ -45,4 +45,19 @@ class File extends ActiveRecord
             $url,
         ) ?? $url;
     }
+
+    /**
+     * A1 File::fields() compatible shape for nested resource serialization.
+     *
+     * @return array<string, mixed>
+     */
+    public function toA1Array(): array
+    {
+        return [
+            'md5' => $this->get('md5'),
+            'type' => $this->get('type'),
+            'url' => $this->get('url'),
+            'key' => $this->get('key'),
+        ];
+    }
 }

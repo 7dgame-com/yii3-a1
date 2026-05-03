@@ -52,8 +52,8 @@ final class RoutesTest extends TestCase
 
     public function testTotalRouteCount(): void
     {
-        // 3 auth + 7 server + 4 v2 + 1 health + 2 swagger + 1 debug = 18
-        $this->assertCount(18, $this->routes);
+        // 3 auth + 7 server + 1 phototype + 4 v2 + 1 health + 2 swagger + 1 debug = 19
+        $this->assertCount(19, $this->routes);
     }
 
     // =========================================================================
@@ -145,6 +145,14 @@ final class RoutesTest extends TestCase
         $route = $this->findRouteByName('v1.server.snapshot');
         $this->assertNotNull($route, 'Route v1.server.snapshot should exist');
         $this->assertSame('/v1/server/snapshot', $route->getData('pattern'));
+        $this->assertSame(['GET'], $route->getData('methods'));
+    }
+
+    public function testV1PhototypeInfoRoute(): void
+    {
+        $route = $this->findRouteByName('v1.phototype.info');
+        $this->assertNotNull($route, 'Route v1.phototype.info should exist');
+        $this->assertSame('/v1/phototype/info', $route->getData('pattern'));
         $this->assertSame(['GET'], $route->getData('methods'));
     }
 
@@ -245,6 +253,7 @@ final class RoutesTest extends TestCase
             'v1.server.checkin',
             'v1.server.tags',
             'v1.server.snapshot',
+            'v1.phototype.info',
             'v2.snapshots.index',
             'v2.snapshots.view',
             'v2.tags.index',
@@ -301,6 +310,7 @@ final class RoutesTest extends TestCase
             '/v1/server/group',
             '/v1/server/tags',
             '/v1/server/snapshot',
+            '/v1/phototype/info',
             '/v2/snapshots',
             '/v2/snapshots/{id:\d+}',
             '/v2/tags',

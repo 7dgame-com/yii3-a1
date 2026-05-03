@@ -72,8 +72,8 @@ final class DebugControllerTest extends TestCase
         $this->assertSame('application/json', $headers['Content-Type']);
 
         $decoded = json_decode((string) $capturedBody, true, flags: JSON_THROW_ON_ERROR);
-        $this->assertSame('error', $decoded['status']);
-        $this->assertContains('space', $decoded['checks']['snapshot_schema']['missing_model_properties']);
+        $this->assertSame('ok', $decoded['status']);
+        $this->assertSame([], $decoded['checks']['snapshot_schema']['missing_model_properties']);
     }
 
     private function createRequest(array $queryParams): ServerRequestInterface
@@ -94,6 +94,15 @@ final class DebugControllerTest extends TestCase
                 if (str_starts_with($sql, 'SHOW COLUMNS')) {
                     $command->method('queryAll')->willReturn([
                         ['Field' => 'id', 'Type' => 'int', 'Null' => 'NO', 'Key' => 'PRI', 'Default' => null, 'Extra' => 'auto_increment'],
+                        ['Field' => 'verse_id', 'Type' => 'int', 'Null' => 'NO', 'Key' => '', 'Default' => null, 'Extra' => ''],
+                        ['Field' => 'uuid', 'Type' => 'varchar(64)', 'Null' => 'YES', 'Key' => '', 'Default' => null, 'Extra' => ''],
+                        ['Field' => 'code', 'Type' => 'json', 'Null' => 'YES', 'Key' => '', 'Default' => null, 'Extra' => ''],
+                        ['Field' => 'data', 'Type' => 'json', 'Null' => 'YES', 'Key' => '', 'Default' => null, 'Extra' => ''],
+                        ['Field' => 'metas', 'Type' => 'json', 'Null' => 'YES', 'Key' => '', 'Default' => null, 'Extra' => ''],
+                        ['Field' => 'resources', 'Type' => 'json', 'Null' => 'YES', 'Key' => '', 'Default' => null, 'Extra' => ''],
+                        ['Field' => 'managers', 'Type' => 'json', 'Null' => 'YES', 'Key' => '', 'Default' => null, 'Extra' => ''],
+                        ['Field' => 'created_by', 'Type' => 'int', 'Null' => 'YES', 'Key' => '', 'Default' => null, 'Extra' => ''],
+                        ['Field' => 'created_at', 'Type' => 'timestamp', 'Null' => 'YES', 'Key' => '', 'Default' => null, 'Extra' => ''],
                         ['Field' => 'space', 'Type' => 'json', 'Null' => 'YES', 'Key' => '', 'Default' => null, 'Extra' => ''],
                     ]);
                     return $command;

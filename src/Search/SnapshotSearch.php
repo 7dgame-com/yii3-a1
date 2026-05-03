@@ -30,13 +30,11 @@ class SnapshotSearch
      */
     public function searchPublic(array $params = []): ActiveQuery
     {
-        $query = $this->createBaseQuery();
+        $query = $this->createBaseQuery($params);
 
-        $query->innerJoin('verse', '{{verse}}.[[id]] = {{snapshot}}.[[verse_id]]')
-            ->innerJoin('verse_property', '{{verse_property}}.[[verse_id]] = {{verse}}.[[id]]')
+        $query->innerJoin('verse_property', '{{verse_property}}.[[verse_id]] = {{snapshot}}.[[verse_id]]')
             ->innerJoin('property', '{{property}}.[[id]] = {{verse_property}}.[[property_id]]')
-            ->andWhere(['property.key' => 'public'])
-            ->orderBy(['snapshot.id' => SORT_DESC]);
+            ->andWhere(['property.key' => 'public']);
 
         if (!empty($params['tags'])) {
             $this->applyTagFilter($query, $params['tags']);
@@ -58,13 +56,11 @@ class SnapshotSearch
      */
     public function searchCheckin(array $params = []): ActiveQuery
     {
-        $query = $this->createBaseQuery();
+        $query = $this->createBaseQuery($params);
 
-        $query->innerJoin('verse', '{{verse}}.[[id]] = {{snapshot}}.[[verse_id]]')
-            ->innerJoin('verse_property', '{{verse_property}}.[[verse_id]] = {{verse}}.[[id]]')
+        $query->innerJoin('verse_property', '{{verse_property}}.[[verse_id]] = {{snapshot}}.[[verse_id]]')
             ->innerJoin('property', '{{property}}.[[id]] = {{verse_property}}.[[property_id]]')
-            ->andWhere(['property.key' => 'checkin'])
-            ->orderBy(['snapshot.id' => SORT_DESC]);
+            ->andWhere(['property.key' => 'checkin']);
 
         if (!empty($params['tags'])) {
             $this->applyTagFilter($query, $params['tags']);
@@ -86,7 +82,7 @@ class SnapshotSearch
      */
     public function searchPrivate(int $userId, array $params = []): ActiveQuery
     {
-        $query = $this->createBaseQuery();
+        $query = $this->createBaseQuery($params);
 
         $query->innerJoin('verse', '{{verse}}.[[id]] = {{snapshot}}.[[verse_id]]')
             ->andWhere(['verse.author_id' => $userId])
@@ -113,7 +109,7 @@ class SnapshotSearch
      */
     public function searchGroup(int $userId, array $params = []): ActiveQuery
     {
-        $query = $this->createBaseQuery();
+        $query = $this->createBaseQuery($params);
 
         $query->innerJoin('verse', '{{verse}}.[[id]] = {{snapshot}}.[[verse_id]]')
             ->innerJoin('group_verse', '{{group_verse}}.[[verse_id]] = {{verse}}.[[id]]')
@@ -154,21 +150,7 @@ class SnapshotSearch
             return $query;
         }
 
-        // Check if verse join already exists; if not, we need it for verse_tags
-        $joins = $query->getJoins();
-        $hasVerseJoin = false;
-        foreach ($joins as $join) {
-            if (isset($join[1]) && $join[1] === 'verse') {
-                $hasVerseJoin = true;
-                break;
-            }
-        }
-
-        if (!$hasVerseJoin) {
-            $query->innerJoin('verse', '{{verse}}.[[id]] = {{snapshot}}.[[verse_id]]');
-        }
-
-        $query->innerJoin('verse_tags', '{{verse_tags}}.[[verse_id]] = {{verse}}.[[id]]')
+        $query->innerJoin('verse_tags', '{{verse_tags}}.[[verse_id]] = {{snapshot}}.[[verse_id]]')
             ->andWhere(['verse_tags.tags_id' => $tagIds]);
 
         return $query;
@@ -179,9 +161,37 @@ class SnapshotSearch
      *
      * @return ActiveQuery
      */
-    private function createBaseQuery(): ActiveQuery
+    private function createBaseQuery(array $params = []): ActiveQuery
     {
-        return (new ActiveQuery(Snapshot::class))
+        $query = (new ActiveQuery(Snapshot::class))
             ->alias('snapshot');
+
+        return $this->applyBaseFilters($query, $params);
+    }
+
+    /**
+     * Apply Yii2 SnapshotSearch::search() compatible filters.
+     */
+    private function applyBaseFilters(ActiveQuery $query, array $params): ActiveQuery
+    {
+        $exactFilters = [];
+
+        foreach (['id', 'verse_id', 'created_at', 'created_by'] as $field) {
+            if (isset($params[$field]) && $params[$field] !== '') {
+                $exactFilters["snapshot.{$field}"] = in_array($field, ['id', 'verse_id', 'created_by'], true)
+                    ? (int) $params[$field]
+                    : $params[$field];
+            }
+        }
+
+        $query->andFilterWhere($exactFilters);
+
+        foreach (['uuid', 'code', 'data', 'metas', 'resources'] as $field) {
+            if (isset($params[$field]) && $params[$field] !== '') {
+                $query->andFilterWhere(['like', "snapshot.{$field}", (string) $params[$field]]);
+            }
+        }
+
+        return $query;
     }
 }

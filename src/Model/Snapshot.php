@@ -22,10 +22,11 @@ class Snapshot extends ActiveRecord implements JsonSerializable
     public int $verse_id = 0;
     public ?string $uuid = null;
     public ?string $code = null;
-    public ?string $data = null;
-    public ?string $metas = null;
-    public ?string $resources = null;
-    public ?string $managers = null;
+    public string|array|object|null $data = null;
+    public string|array|object|null $metas = null;
+    public string|array|object|null $resources = null;
+    public string|array|object|null $managers = null;
+    public string|array|object|null $space = null;
     public ?int $created_by = null;
     public \DateTimeImmutable|string|null $created_at = null;
 

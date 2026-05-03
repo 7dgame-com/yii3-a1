@@ -19,7 +19,7 @@ use Yiisoft\Db\Connection\ConnectionInterface;
  */
 final class SnapshotDiagnosticsServiceTest extends TestCase
 {
-    public function testCollectReportsMissingModelPropertyForSnapshotSpaceColumn(): void
+    public function testCollectReportsOkForCurrentProductionSnapshotSchema(): void
     {
         $db = $this->createDbMock([
             ['Field' => 'id', 'Type' => 'int', 'Null' => 'NO', 'Key' => 'PRI', 'Default' => null, 'Extra' => 'auto_increment'],
@@ -38,10 +38,35 @@ final class SnapshotDiagnosticsServiceTest extends TestCase
         $service = new SnapshotDiagnosticsService($db);
         $report = $service->collect();
 
-        $this->assertSame('error', $report['status']);
+        $this->assertSame('ok', $report['status']);
         $this->assertSame(8, $report['checks']['snapshot_table']['row_count']);
-        $this->assertContains('space', $report['checks']['snapshot_schema']['missing_model_properties']);
-        $this->assertStringContainsString('space', $report['summary']['probable_causes'][0]);
+        $this->assertSame([], $report['checks']['snapshot_schema']['missing_model_properties']);
+        $this->assertStringContainsString('No snapshot schema mismatch detected', $report['summary']['probable_causes'][0]);
+    }
+
+    public function testCollectReportsMissingModelPropertyForUnknownSnapshotColumn(): void
+    {
+        $db = $this->createDbMock([
+            ['Field' => 'id', 'Type' => 'int', 'Null' => 'NO', 'Key' => 'PRI', 'Default' => null, 'Extra' => 'auto_increment'],
+            ['Field' => 'verse_id', 'Type' => 'int', 'Null' => 'NO', 'Key' => '', 'Default' => null, 'Extra' => ''],
+            ['Field' => 'uuid', 'Type' => 'varchar(64)', 'Null' => 'YES', 'Key' => '', 'Default' => null, 'Extra' => ''],
+            ['Field' => 'code', 'Type' => 'json', 'Null' => 'YES', 'Key' => '', 'Default' => null, 'Extra' => ''],
+            ['Field' => 'data', 'Type' => 'json', 'Null' => 'YES', 'Key' => '', 'Default' => null, 'Extra' => ''],
+            ['Field' => 'metas', 'Type' => 'json', 'Null' => 'YES', 'Key' => '', 'Default' => null, 'Extra' => ''],
+            ['Field' => 'resources', 'Type' => 'json', 'Null' => 'YES', 'Key' => '', 'Default' => null, 'Extra' => ''],
+            ['Field' => 'managers', 'Type' => 'json', 'Null' => 'YES', 'Key' => '', 'Default' => null, 'Extra' => ''],
+            ['Field' => 'created_by', 'Type' => 'int', 'Null' => 'YES', 'Key' => '', 'Default' => null, 'Extra' => ''],
+            ['Field' => 'created_at', 'Type' => 'timestamp', 'Null' => 'YES', 'Key' => '', 'Default' => null, 'Extra' => ''],
+            ['Field' => 'space', 'Type' => 'json', 'Null' => 'YES', 'Key' => '', 'Default' => null, 'Extra' => ''],
+            ['Field' => 'future_column', 'Type' => 'json', 'Null' => 'YES', 'Key' => '', 'Default' => null, 'Extra' => ''],
+        ]);
+
+        $service = new SnapshotDiagnosticsService($db);
+        $report = $service->collect();
+
+        $this->assertSame('error', $report['status']);
+        $this->assertContains('future_column', $report['checks']['snapshot_schema']['missing_model_properties']);
+        $this->assertStringContainsString('future_column', $report['summary']['probable_causes'][0]);
     }
 
     public function testCollectCapturesColumnReadFailure(): void

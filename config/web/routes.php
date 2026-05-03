@@ -6,6 +6,7 @@ use App\Controller\HealthController;
 use App\Controller\SwaggerController;
 use App\Controller\DebugController;
 use App\Controller\V1\AuthController;
+use App\Controller\V1\PhototypeController;
 use App\Controller\V1\ServerController;
 use App\Controller\V2\SnapshotController;
 use App\Controller\V2\SystemController;
@@ -69,6 +70,10 @@ return [
     Route::get('/v1/server/snapshot')
         ->action([ServerController::class, 'snapshot'])
         ->name('v1.server.snapshot'),
+
+    Route::get('/v1/phototype/info')
+        ->action([PhototypeController::class, 'info'])
+        ->name('v1.phototype.info'),
 
     // =========================================================================
     // V2 Routes

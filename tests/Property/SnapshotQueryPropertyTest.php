@@ -49,7 +49,7 @@ final class SnapshotQueryPropertyTest extends TestCase
      * Property 7a: searchPublic always builds a query with property.key = 'public'.
      *
      * For any invocation, the WHERE clause must contain 'public' and the query
-     * must join verse, verse_property, and property tables.
+     * must join verse_property and property tables using the A1 query shape.
      *
      * **Validates: Requirements 4.2, 5.1**
      *
@@ -72,10 +72,10 @@ final class SnapshotQueryPropertyTest extends TestCase
                 $this->assertStringContainsString('property.key', $whereStr);
                 $this->assertStringContainsString('public', $whereStr);
 
-                // Must join verse, verse_property, property
+                // Must join verse_property and property, without the extra verse join.
                 $joins = $query->getJoins();
                 $joinTables = array_map(fn($j) => $j[1], $joins);
-                $this->assertContains('verse', $joinTables);
+                $this->assertNotContains('verse', $joinTables);
                 $this->assertContains('verse_property', $joinTables);
                 $this->assertContains('property', $joinTables);
             });
@@ -85,7 +85,7 @@ final class SnapshotQueryPropertyTest extends TestCase
      * Property 7b: searchCheckin always builds a query with property.key = 'checkin'.
      *
      * For any invocation, the WHERE clause must contain 'checkin' and the query
-     * must join verse, verse_property, and property tables.
+     * must join verse_property and property tables using the A1 query shape.
      *
      * **Validates: Requirements 4.3, 5.2**
      *
@@ -108,10 +108,10 @@ final class SnapshotQueryPropertyTest extends TestCase
                 $this->assertStringContainsString('property.key', $whereStr);
                 $this->assertStringContainsString('checkin', $whereStr);
 
-                // Must join verse, verse_property, property
+                // Must join verse_property and property, without the extra verse join.
                 $joins = $query->getJoins();
                 $joinTables = array_map(fn($j) => $j[1], $joins);
-                $this->assertContains('verse', $joinTables);
+                $this->assertNotContains('verse', $joinTables);
                 $this->assertContains('verse_property', $joinTables);
                 $this->assertContains('property', $joinTables);
             });

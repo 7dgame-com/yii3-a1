@@ -45,11 +45,20 @@ final class SnapshotSearchTest extends TestCase
         $joins = $query->getJoins();
         $this->assertNotEmpty($joins, 'searchPublic should have joins');
 
-        // Should have 3 inner joins: verse, verse_property, property
+        // Should match A1 shape: verse_property + property, no extra verse join.
         $joinTables = array_map(fn($j) => $j[1], $joins);
-        $this->assertContains('verse', $joinTables);
         $this->assertContains('verse_property', $joinTables);
         $this->assertContains('property', $joinTables);
+    }
+
+    public function testSearchPublicUsesA1JoinShapeWithoutVerseOrForcedOrder(): void
+    {
+        $query = $this->search->searchPublic();
+
+        $joinTables = array_map(fn($j) => $j[1], $query->getJoins());
+
+        $this->assertNotContains('verse', $joinTables);
+        $this->assertSame([], $query->getOrderBy());
     }
 
     public function testSearchPublicFiltersOnPublicKey(): void
@@ -62,6 +71,48 @@ final class SnapshotSearchTest extends TestCase
         // The where clause should contain property.key = 'public'
         $whereStr = json_encode($where);
         $this->assertStringContainsString('public', $whereStr);
+    }
+
+    public function testSearchPublicAppliesA1ExactFilters(): void
+    {
+        $query = $this->search->searchPublic([
+            'id' => '8',
+            'verse_id' => '466',
+            'created_by' => '24',
+            'created_at' => '2026-05-02 10:00:00',
+        ]);
+
+        $whereStr = json_encode($query->getWhere());
+
+        $this->assertStringContainsString('snapshot.id', $whereStr);
+        $this->assertStringContainsString('8', $whereStr);
+        $this->assertStringContainsString('snapshot.verse_id', $whereStr);
+        $this->assertStringContainsString('466', $whereStr);
+        $this->assertStringContainsString('snapshot.created_by', $whereStr);
+        $this->assertStringContainsString('24', $whereStr);
+        $this->assertStringContainsString('snapshot.created_at', $whereStr);
+        $this->assertStringContainsString('2026-05-02 10:00:00', $whereStr);
+    }
+
+    public function testSearchPublicAppliesA1LikeFilters(): void
+    {
+        $query = $this->search->searchPublic([
+            'uuid' => 'b20b',
+            'code' => 'local verse',
+            'data' => 'MetaRoot',
+            'metas' => 'prefab',
+            'resources' => 'polygen',
+        ]);
+
+        $whereStr = json_encode($query->getWhere());
+
+        foreach (['snapshot.uuid', 'snapshot.code', 'snapshot.data', 'snapshot.metas', 'snapshot.resources'] as $column) {
+            $this->assertStringContainsString($column, $whereStr);
+        }
+
+        foreach (['b20b', 'local verse', 'MetaRoot', 'prefab', 'polygen'] as $value) {
+            $this->assertStringContainsString($value, $whereStr);
+        }
     }
 
     public function testSearchCheckinReturnsActiveQuery(): void
@@ -79,9 +130,18 @@ final class SnapshotSearchTest extends TestCase
         $this->assertNotEmpty($joins, 'searchCheckin should have joins');
 
         $joinTables = array_map(fn($j) => $j[1], $joins);
-        $this->assertContains('verse', $joinTables);
         $this->assertContains('verse_property', $joinTables);
         $this->assertContains('property', $joinTables);
+    }
+
+    public function testSearchCheckinUsesA1JoinShapeWithoutVerseOrForcedOrder(): void
+    {
+        $query = $this->search->searchCheckin();
+
+        $joinTables = array_map(fn($j) => $j[1], $query->getJoins());
+
+        $this->assertNotContains('verse', $joinTables);
+        $this->assertSame([], $query->getOrderBy());
     }
 
     public function testSearchCheckinFiltersOnCheckinKey(): void
