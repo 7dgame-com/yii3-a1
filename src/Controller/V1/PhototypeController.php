@@ -35,7 +35,11 @@ final class PhototypeController
         }
 
         $type = (string) $params['type'];
-        $phototype = $this->phototypeQueryService->findInfoByType($type);
+        try {
+            $phototype = $this->phototypeQueryService->findInfoByType($type);
+        } catch (\Throwable) {
+            return $this->createErrorResponse($request, 400, 'model not found.');
+        }
 
         if ($phototype === null) {
             return $this->createErrorResponse($request, 400, 'model not found.');

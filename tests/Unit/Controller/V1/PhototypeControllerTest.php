@@ -103,6 +103,24 @@ final class PhototypeControllerTest extends TestCase
         $this->assertSame(400, $decoded['status']);
     }
 
+    public function testInfoReturnsBadRequestWhenPhototypeCannotBeResolved(): void
+    {
+        $this->phototypeQueryService->expects($this->once())
+            ->method('findInfoByType')
+            ->with('broken')
+            ->willThrowException(new \RuntimeException('relation failed'));
+
+        $capturedBody = null;
+        $this->setupResponse(400, $capturedBody);
+
+        $this->controller->info($this->createRequest(['type' => 'broken']));
+
+        $decoded = json_decode((string) $capturedBody, true, flags: JSON_THROW_ON_ERROR);
+        $this->assertSame('Bad Request', $decoded['name']);
+        $this->assertSame('model not found.', $decoded['message']);
+        $this->assertSame(400, $decoded['status']);
+    }
+
     public function testInfoHonorsApplicationXmlAccept(): void
     {
         $this->phototypeQueryService->expects($this->once())

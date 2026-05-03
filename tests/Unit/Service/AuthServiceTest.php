@@ -123,7 +123,7 @@ final class AuthServiceTest extends TestCase
     {
         $authService = new AuthService($this->jwtService, $this->refreshTokenService);
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionCode(400);
+        $this->expectExceptionCode(401);
         $this->expectExceptionMessage('Refresh token is invalid.');
         $authService->refresh('nonexistent_invalid_token');
     }
@@ -132,7 +132,7 @@ final class AuthServiceTest extends TestCase
     {
         $authService = new AuthService($this->jwtService, $this->refreshTokenService);
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionCode(400);
+        $this->expectExceptionCode(401);
         $authService->refresh('');
     }
 
@@ -142,7 +142,7 @@ final class AuthServiceTest extends TestCase
         $refreshToken = $this->refreshTokenService->create(42);
         $result = $authService->refresh($refreshToken);
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionCode(400);
+        $this->expectExceptionCode(401);
         $authService->refresh($refreshToken);
         $this->refreshTokenService->delete($result['token']['refreshToken']);
     }

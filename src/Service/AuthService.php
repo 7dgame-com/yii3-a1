@@ -82,7 +82,7 @@ final class AuthService
         $userId = $this->refreshTokenService->validate($refreshToken);
 
         if ($userId === null) {
-            throw new RuntimeException('Refresh token is invalid.', 400);
+            throw new RuntimeException('Refresh token is invalid.', 401);
         }
 
         // Delete the old refresh token

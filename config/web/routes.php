@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Controller\HealthController;
 use App\Controller\SwaggerController;
-use App\Controller\DebugController;
 use App\Controller\V1\AuthController;
 use App\Controller\V1\PhototypeController;
 use App\Controller\V1\ServerController;
@@ -100,13 +99,6 @@ return [
     Route::get('/health')
         ->action([HealthController::class, 'index'])
         ->name('health'),
-
-    // =========================================================================
-    // Debug Diagnostics
-    // =========================================================================
-    Route::get('/debug/snapshot')
-        ->action([DebugController::class, 'snapshot'])
-        ->name('debug.snapshot'),
 
     // =========================================================================
     // Swagger Documentation

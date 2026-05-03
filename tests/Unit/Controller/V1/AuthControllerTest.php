@@ -98,15 +98,15 @@ final class AuthControllerTest extends TestCase
         $this->refreshTokenService->delete($d['token']['refreshToken']);
     }
 
-    public function testRefreshReturns400OnInvalidToken(): void
+    public function testRefreshReturns401OnInvalidToken(): void
     {
         $b = null;
         $sc = null;
         $this->errResp($b, $sc);
         $this->controller->refresh($this->req(['refreshToken' => 'invalid_token']));
-        $this->assertSame(400, $sc);
+        $this->assertSame(401, $sc);
         $d = json_decode($b, true);
-        $this->assertSame(400, $d['status']);
+        $this->assertSame(401, $d['status']);
         $this->assertSame('Refresh token is invalid.', $d['message']);
     }
 
@@ -172,15 +172,15 @@ final class AuthControllerTest extends TestCase
         $this->assertCount(5, $d);
     }
 
-    public function testRefreshErrorResponseUses400Status(): void
+    public function testRefreshErrorResponseUses401StatusForInvalidToken(): void
     {
         $b = null;
         $sc = null;
         $this->errResp($b, $sc);
         $this->controller->refresh($this->req(['refreshToken' => 'x']));
-        $this->assertSame(400, $sc);
+        $this->assertSame(401, $sc);
         $d = json_decode($b, true);
-        $this->assertSame(400, $d['status']);
+        $this->assertSame(401, $d['status']);
     }
 
     public function testRefreshDeletesOldToken(): void
@@ -194,7 +194,7 @@ final class AuthControllerTest extends TestCase
         $this->refreshTokenService->delete($d['token']['refreshToken']);
     }
 
-    public function testRefreshWithAlreadyUsedTokenReturns400(): void
+    public function testRefreshWithAlreadyUsedTokenReturns401(): void
     {
         $t = $this->refreshTokenService->create(88);
         $b = null;
@@ -211,7 +211,7 @@ final class AuthControllerTest extends TestCase
         $sc2 = null;
         $this->errResp($b2, $sc2);
         $this->controller->refresh($this->req(['refreshToken' => $t]));
-        $this->assertSame(400, $sc2);
+        $this->assertSame(401, $sc2);
         $this->refreshTokenService->delete($nt);
     }
 

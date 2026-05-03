@@ -295,6 +295,28 @@ final class SwaggerControllerTest extends TestCase
     // GET /swagger/json-schema
     // ========================================================================
 
+    public function testJsonSchemaReturns401WithoutAuthHeader(): void
+    {
+        $controller = new SwaggerController(
+            $this->responseFactory,
+            $this->streamFactory,
+            'admin',
+            'secret',
+        );
+
+        $capturedStatusCode = null;
+        $capturedHeaders = [];
+        $this->setupResponseCapture($capturedStatusCode, $capturedHeaders);
+
+        $request = $this->createRequestWithAuth('');
+
+        $controller->jsonSchema($request);
+
+        $this->assertSame(401, $capturedStatusCode);
+        $this->assertArrayHasKey('WWW-Authenticate', $capturedHeaders);
+        $this->assertStringContainsString('Basic', $capturedHeaders['WWW-Authenticate']);
+    }
+
     /**
      * Test that /swagger/json-schema returns JSON content type.
      * Validates: Requirement 7.3
@@ -312,7 +334,7 @@ final class SwaggerControllerTest extends TestCase
         $capturedHeaders = [];
         $this->setupResponseCapture($capturedStatusCode, $capturedHeaders);
 
-        $request = $this->createRequestWithAuth('');
+        $request = $this->createRequestWithAuth('Basic ' . base64_encode('admin:secret'));
 
         $controller->jsonSchema($request);
 
@@ -339,7 +361,7 @@ final class SwaggerControllerTest extends TestCase
         $capturedHeaders = [];
         $this->setupResponseCaptureWithBody($capturedBody, $capturedStatusCode, $capturedHeaders);
 
-        $request = $this->createRequestWithAuth('');
+        $request = $this->createRequestWithAuth('Basic ' . base64_encode('admin:secret'));
 
         $controller->jsonSchema($request);
 
@@ -366,7 +388,7 @@ final class SwaggerControllerTest extends TestCase
         $capturedHeaders = [];
         $this->setupResponseCaptureWithBody($capturedBody, $capturedStatusCode, $capturedHeaders);
 
-        $request = $this->createRequestWithAuth('');
+        $request = $this->createRequestWithAuth('Basic ' . base64_encode('admin:secret'));
 
         $controller->jsonSchema($request);
 

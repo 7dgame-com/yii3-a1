@@ -324,10 +324,15 @@ final class SwaggerController
         tags: ['Documentation'],
         responses: [
             new OA\Response(response: 200, description: 'OpenAPI JSON Schema'),
+            new OA\Response(response: 401, description: 'Unauthorized'),
         ],
     )]
     public function jsonSchema(ServerRequestInterface $request): ResponseInterface
     {
+        if (!$this->authenticate($request)) {
+            return $this->createUnauthorizedResponse();
+        }
+
         $scanPath = dirname(__DIR__);
         $openapi = Generator::scan([$scanPath]);
 
