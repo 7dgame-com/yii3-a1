@@ -9,6 +9,7 @@ use App\Search\SnapshotSearch;
 use App\Search\TagsSearch;
 use App\Service\PaginationService;
 use App\Service\SnapshotQueryService;
+use App\Service\Yii2RestResponseFactory;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseFactoryInterface;
@@ -57,6 +58,7 @@ final class TagControllerTest extends TestCase
             $this->snapshotQueryService,
             $this->responseFactory,
             $this->streamFactory,
+            new Yii2RestResponseFactory($this->responseFactory, $this->streamFactory),
         );
     }
 
@@ -147,17 +149,48 @@ final class TagControllerTest extends TestCase
         $this->controller->index($request);
 
         $this->assertArrayHasKey('Content-Type', $headerCalls);
-        $this->assertSame('application/json', $headerCalls['Content-Type']);
+        $this->assertSame('application/json; charset=UTF-8', $headerCalls['Content-Type']);
+    }
+
+    public function testIndexHonorsApplicationXmlAccept(): void
+    {
+        $tagData = [
+            ['id' => 1, 'name' => 'Nature', 'key' => 'nature', 'type' => 'Classify'],
+        ];
+
+        $query = $this->createMock(ActiveQuery::class);
+        $query->method('all')->willReturn($tagData);
+
+        $this->tagsSearch->method('findByType')->willReturn($query);
+        $this->cache->method('getOrSet')
+            ->willReturnCallback(fn (string $key, callable $cb, int $ttl) => $cb());
+
+        $headerCalls = [];
+        $capturedBody = null;
+        $this->setupResponseWithHeaderAndBodyCapture($headerCalls, $capturedBody);
+
+        $request = $this->createRequest('application/xml');
+
+        $this->controller->index($request);
+
+        $this->assertSame('application/xml; charset=UTF-8', $headerCalls['Content-Type']);
+        $this->assertSame(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<response><item><id>1</id><name>Nature</name><key>nature</key><type>Classify</type></item></response>\n",
+            $capturedBody,
+        );
     }
 
     // ========================================================================
     // Helpers
     // ========================================================================
 
-    private function createRequest(): ServerRequestInterface
+    private function createRequest(string $accept = '*/*'): ServerRequestInterface
     {
         $request = $this->createMock(ServerRequestInterface::class);
         $request->method('getQueryParams')->willReturn([]);
+        $request->method('getHeaderLine')
+            ->with('Accept')
+            ->willReturn($accept);
 
         return $request;
     }
@@ -186,6 +219,29 @@ final class TagControllerTest extends TestCase
     {
         $stream = $this->createMock(StreamInterface::class);
         $this->streamFactory->method('createStream')->willReturn($stream);
+
+        $response = $this->createMock(ResponseInterface::class);
+        $response->method('withHeader')
+            ->willReturnCallback(function (string $name, string $value) use ($response, &$headerCalls) {
+                $headerCalls[$name] = $value;
+                return $response;
+            });
+        $response->method('withBody')->willReturnSelf();
+
+        $this->responseFactory
+            ->method('createResponse')
+            ->willReturn($response);
+    }
+
+    private function setupResponseWithHeaderAndBodyCapture(array &$headerCalls, ?string &$capturedBody): void
+    {
+        $stream = $this->createMock(StreamInterface::class);
+        $this->streamFactory
+            ->method('createStream')
+            ->willReturnCallback(function (string $body) use ($stream, &$capturedBody) {
+                $capturedBody = $body;
+                return $stream;
+            });
 
         $response = $this->createMock(ResponseInterface::class);
         $response->method('withHeader')

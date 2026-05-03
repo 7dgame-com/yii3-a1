@@ -8,6 +8,7 @@ use App\Model\Snapshot;
 use App\Service\PaginatedResult;
 use App\Service\PaginationService;
 use App\Service\SnapshotQueryService;
+use App\Service\Yii2RestResponseFactory;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -37,6 +38,7 @@ final class SnapshotController
         private readonly ResponseFactoryInterface $responseFactory,
         private readonly StreamFactoryInterface $streamFactory,
         private readonly CurrentRoute $currentRoute,
+        private readonly Yii2RestResponseFactory $restResponseFactory,
     ) {
     }
 
@@ -63,11 +65,11 @@ final class SnapshotController
         $expandFields = $this->parseExpand($request);
 
         return match ($scope) {
-            'public' => $this->handlePublic($params, $expandFields),
-            'checkin' => $this->handleCheckin($params, $expandFields),
+            'public' => $this->handlePublic($request, $params, $expandFields),
+            'checkin' => $this->handleCheckin($request, $params, $expandFields),
             'group' => $this->handleGroup($request, $params, $expandFields),
             'private' => $this->handlePrivate($request, $params, $expandFields),
-            default => $this->createErrorResponse(400, "Invalid scope: {$scope}. Allowed values: public, checkin, group, private."),
+            default => $this->createErrorResponse($request, 400, "Invalid scope: {$scope}. Allowed values: public, checkin, group, private."),
         };
     }
 
@@ -85,19 +87,19 @@ final class SnapshotController
         $expandFields = $this->parseExpand($request);
 
         if ($id === null) {
-            return $this->createErrorResponse(400, 'Missing required parameter: id.');
+            return $this->createErrorResponse($request, 400, 'Missing required parameter: id.');
         }
 
         $snapshot = $this->snapshotQueryService->findSnapshotModel((int) $id);
 
         if ($snapshot === null) {
-            return $this->createErrorResponse(404, "Object not found: {$id}");
+            return $this->createErrorResponse($request, 404, "Object not found: {$id}");
         }
 
         if (empty($expandFields)) {
-            return $this->createJsonResponse($snapshot->jsonSerialize());
+            return $this->createResponse($request, $snapshot->jsonSerialize());
         }
-        return $this->createJsonResponse($snapshot->toExpandedArray($expandFields));
+        return $this->createResponse($request, $snapshot->toExpandedArray($expandFields));
     }
 
     /**
@@ -105,19 +107,19 @@ final class SnapshotController
      *
      * @see Requirement 5.1
      */
-    private function handlePublic(array $params, array $expandFields): ResponseInterface
+    private function handlePublic(ServerRequestInterface $request, array $params, array $expandFields): ResponseInterface
     {
         $result = $this->snapshotQueryService->findPublic($params);
-        return $this->createPaginatedSnapshotResponse($result, $expandFields);
+        return $this->createPaginatedSnapshotResponse($request, $result, $expandFields);
     }
 
     /**
      * Handle scope=checkin query.
      */
-    private function handleCheckin(array $params, array $expandFields): ResponseInterface
+    private function handleCheckin(ServerRequestInterface $request, array $params, array $expandFields): ResponseInterface
     {
         $result = $this->snapshotQueryService->findCheckin($params);
-        return $this->createPaginatedSnapshotResponse($result, $expandFields);
+        return $this->createPaginatedSnapshotResponse($request, $result, $expandFields);
     }
 
     /**
@@ -127,11 +129,11 @@ final class SnapshotController
     {
         $user = $request->getAttribute('user');
         if ($user === null || !isset($user['user_id'])) {
-            return $this->createErrorResponse(403, 'Login required.');
+            return $this->createErrorResponse($request, 403, 'Login required.');
         }
 
         $result = $this->snapshotQueryService->findGroup((int) $user['user_id'], $params);
-        return $this->createPaginatedSnapshotResponse($result, $expandFields);
+        return $this->createPaginatedSnapshotResponse($request, $result, $expandFields);
     }
 
     /**
@@ -141,17 +143,21 @@ final class SnapshotController
     {
         $user = $request->getAttribute('user');
         if ($user === null || !isset($user['user_id'])) {
-            return $this->createErrorResponse(403, 'Login required.');
+            return $this->createErrorResponse($request, 403, 'Login required.');
         }
 
         $result = $this->snapshotQueryService->findPrivate((int) $user['user_id'], $params);
-        return $this->createPaginatedSnapshotResponse($result, $expandFields);
+        return $this->createPaginatedSnapshotResponse($request, $result, $expandFields);
     }
 
     /**
      * Create a paginated JSON response for snapshot items, handling expand.
      */
-    private function createPaginatedSnapshotResponse(PaginatedResult $result, array $expandFields): ResponseInterface
+    private function createPaginatedSnapshotResponse(
+        ServerRequestInterface $request,
+        PaginatedResult $result,
+        array $expandFields,
+    ): ResponseInterface
     {
         $items = array_map(function ($item) use ($expandFields) {
             if ($item instanceof Snapshot) {
@@ -163,7 +169,7 @@ final class SnapshotController
             return $item;
         }, $result->items);
 
-        $response = $this->createJsonResponse($items);
+        $response = $this->createResponse($request, $items);
         return $this->paginationService->applyHeaders($response, $result);
     }
 
@@ -185,14 +191,9 @@ final class SnapshotController
      * @param mixed $data       The data to encode as JSON.
      * @param int   $statusCode HTTP status code (default 200).
      */
-    private function createJsonResponse(mixed $data, int $statusCode = 200): ResponseInterface
+    private function createResponse(ServerRequestInterface $request, mixed $data, int $statusCode = 200): ResponseInterface
     {
-        $json = json_encode($data, JSON_THROW_ON_ERROR);
-        $stream = $this->streamFactory->createStream($json);
-
-        return $this->responseFactory->createResponse($statusCode)
-            ->withHeader('Content-Type', 'application/json')
-            ->withBody($stream);
+        return $this->restResponseFactory->create($request, $data, $statusCode);
     }
 
     /**
@@ -203,17 +204,8 @@ final class SnapshotController
      *
      * @see Requirement 10.3
      */
-    private function createErrorResponse(int $statusCode, string $message): ResponseInterface
+    private function createErrorResponse(ServerRequestInterface $request, int $statusCode, string $message): ResponseInterface
     {
-        $nameMap = [400 => 'Bad Request', 401 => 'Unauthorized', 403 => 'Forbidden', 404 => 'Not Found'];
-        $typeMap = [400 => 'yii\\web\\BadRequestHttpException', 401 => 'yii\\web\\UnauthorizedHttpException', 403 => 'yii\\web\\ForbiddenHttpException', 404 => 'yii\\web\\NotFoundHttpException'];
-
-        return $this->createJsonResponse([
-            'name' => $nameMap[$statusCode] ?? 'Error',
-            'message' => $message,
-            'code' => 0,
-            'status' => $statusCode,
-            'type' => $typeMap[$statusCode] ?? 'yii\\web\\HttpException',
-        ], $statusCode);
+        return $this->restResponseFactory->createError($request, $statusCode, $message);
     }
 }

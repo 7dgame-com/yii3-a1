@@ -6,6 +6,7 @@ namespace App\Tests\Unit\Controller\V1;
 
 use App\Controller\V1\PhototypeController;
 use App\Service\PhototypeQueryService;
+use App\Service\Yii2RestResponseFactory;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseFactoryInterface;
@@ -34,6 +35,7 @@ final class PhototypeControllerTest extends TestCase
             $this->phototypeQueryService,
             $this->responseFactory,
             $this->streamFactory,
+            new Yii2RestResponseFactory($this->responseFactory, $this->streamFactory),
         );
     }
 
@@ -82,13 +84,57 @@ final class PhototypeControllerTest extends TestCase
         $this->assertSame('Bad Request', $decoded['name']);
         $this->assertSame('model not found.', $decoded['message']);
         $this->assertSame(400, $decoded['status']);
-        $this->assertSame('yii\\web\\BadRequestHttpException', $decoded['type']);
+        $this->assertArrayNotHasKey('type', $decoded);
     }
 
-    private function createRequest(array $queryParams): ServerRequestInterface
+    public function testInfoReturnsBadRequestWhenTypeIsMissing(): void
+    {
+        $this->phototypeQueryService->expects($this->never())
+            ->method('findInfoByType');
+
+        $capturedBody = null;
+        $this->setupResponse(400, $capturedBody);
+
+        $this->controller->info($this->createRequest([]));
+
+        $decoded = json_decode((string) $capturedBody, true, flags: JSON_THROW_ON_ERROR);
+        $this->assertSame('Bad Request', $decoded['name']);
+        $this->assertSame('Missing required parameters: type', $decoded['message']);
+        $this->assertSame(400, $decoded['status']);
+    }
+
+    public function testInfoHonorsApplicationXmlAccept(): void
+    {
+        $this->phototypeQueryService->expects($this->once())
+            ->method('findInfoByType')
+            ->with('polygen')
+            ->willReturn([
+                'id' => 1,
+                'data' => '{"schema":true}',
+                'title' => 'Polygen',
+                'resource' => null,
+            ]);
+
+        $capturedBody = null;
+        $headers = [];
+        $this->setupResponseWithHeaders(200, $capturedBody, $headers);
+
+        $this->controller->info($this->createRequest(['type' => 'polygen'], 'application/xml'));
+
+        $this->assertSame('application/xml; charset=UTF-8', $headers['Content-Type']);
+        $this->assertSame(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<response><id>1</id><data>{\"schema\":true}</data><title>Polygen</title><resource/></response>\n",
+            $capturedBody,
+        );
+    }
+
+    private function createRequest(array $queryParams, string $accept = '*/*'): ServerRequestInterface
     {
         $request = $this->createMock(ServerRequestInterface::class);
         $request->method('getQueryParams')->willReturn($queryParams);
+        $request->method('getHeaderLine')
+            ->with('Accept')
+            ->willReturn($accept);
 
         return $request;
     }
@@ -105,6 +151,30 @@ final class PhototypeControllerTest extends TestCase
 
         $response = $this->createMock(ResponseInterface::class);
         $response->method('withHeader')->willReturnSelf();
+        $response->method('withBody')->willReturnSelf();
+
+        $this->responseFactory
+            ->method('createResponse')
+            ->with($statusCode)
+            ->willReturn($response);
+    }
+
+    private function setupResponseWithHeaders(int $statusCode, ?string &$capturedBody, array &$headers): void
+    {
+        $stream = $this->createMock(StreamInterface::class);
+        $this->streamFactory
+            ->method('createStream')
+            ->willReturnCallback(function (string $body) use ($stream, &$capturedBody) {
+                $capturedBody = $body;
+                return $stream;
+            });
+
+        $response = $this->createMock(ResponseInterface::class);
+        $response->method('withHeader')
+            ->willReturnCallback(function (string $name, string $value) use ($response, &$headers) {
+                $headers[$name] = $value;
+                return $response;
+            });
         $response->method('withBody')->willReturnSelf();
 
         $this->responseFactory

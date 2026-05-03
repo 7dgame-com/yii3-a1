@@ -8,6 +8,7 @@ use App\Model\Snapshot;
 use App\Service\PaginatedResult;
 use App\Service\PaginationService;
 use App\Service\SnapshotQueryService;
+use App\Service\Yii2RestResponseFactory;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -37,6 +38,7 @@ final class ServerController
         private readonly PaginationService $paginationService,
         private readonly ResponseFactoryInterface $responseFactory,
         private readonly StreamFactoryInterface $streamFactory,
+        private readonly Yii2RestResponseFactory $restResponseFactory,
     ) {
     }
 
@@ -47,12 +49,16 @@ final class ServerController
      *
      * @see Requirement 4.1
      */
-    public function test(): ResponseInterface
+    public function test(?ServerRequestInterface $request = null): ResponseInterface
     {
+        if ($request !== null) {
+            return $this->restResponseFactory->create($request, 'test');
+        }
+
         $stream = $this->streamFactory->createStream('"test"');
 
         return $this->responseFactory->createResponse(200)
-            ->withHeader('Content-Type', 'application/json')
+            ->withHeader('Content-Type', 'application/json; charset=UTF-8')
             ->withBody($stream);
     }
 
@@ -70,7 +76,7 @@ final class ServerController
         $result = $this->snapshotQueryService->findPublic($params);
         $expandFields = $this->parseExpand($request);
 
-        return $this->createPaginatedSnapshotResponse($result, $expandFields);
+        return $this->createPaginatedSnapshotResponse($request, $result, $expandFields);
     }
 
     /**
@@ -87,7 +93,7 @@ final class ServerController
         $result = $this->snapshotQueryService->findCheckin($params);
         $expandFields = $this->parseExpand($request);
 
-        return $this->createPaginatedSnapshotResponse($result, $expandFields);
+        return $this->createPaginatedSnapshotResponse($request, $result, $expandFields);
     }
 
     /**
@@ -103,14 +109,14 @@ final class ServerController
     {
         $user = $request->getAttribute('user');
         if ($user === null || !isset($user['user_id'])) {
-            return $this->createErrorResponse(401, 'Your request was made with invalid credentials.');
+            return $this->createErrorResponse($request, 401, 'Your request was made with invalid credentials.');
         }
 
         $params = $request->getQueryParams();
         $result = $this->snapshotQueryService->findPrivate((int) $user['user_id'], $params);
         $expandFields = $this->parseExpand($request);
 
-        return $this->createPaginatedSnapshotResponse($result, $expandFields);
+        return $this->createPaginatedSnapshotResponse($request, $result, $expandFields);
     }
 
     /**
@@ -126,14 +132,14 @@ final class ServerController
     {
         $user = $request->getAttribute('user');
         if ($user === null || !isset($user['user_id'])) {
-            return $this->createErrorResponse(401, 'Your request was made with invalid credentials.');
+            return $this->createErrorResponse($request, 401, 'Your request was made with invalid credentials.');
         }
 
         $params = $request->getQueryParams();
         $result = $this->snapshotQueryService->findGroup((int) $user['user_id'], $params);
         $expandFields = $this->parseExpand($request);
 
-        return $this->createPaginatedSnapshotResponse($result, $expandFields);
+        return $this->createPaginatedSnapshotResponse($request, $result, $expandFields);
     }
 
     /**
@@ -149,7 +155,7 @@ final class ServerController
         $type = $params['type'] ?? 'Classify';
         $tags = $this->snapshotQueryService->findTags((string) $type);
 
-        return $this->createJsonResponse($tags);
+        return $this->createResponse($request, $tags);
     }
 
     /**
@@ -171,17 +177,17 @@ final class ServerController
         } elseif (isset($params['verse_id'])) {
             $snapshot = $this->snapshotQueryService->findSnapshotModelByVerseId((int) $params['verse_id']);
         } else {
-            return $this->createErrorResponse(400, 'id or verse_id is required.');
+            return $this->createErrorResponse($request, 400, 'id or verse_id is required.');
         }
 
         if ($snapshot === null) {
-            return $this->createErrorResponse(400, 'Snapshot not found.');
+            return $this->createErrorResponse($request, 400, 'Snapshot not found.');
         }
 
         if (empty($expandFields)) {
-            return $this->createJsonResponse($snapshot->jsonSerialize());
+            return $this->createResponse($request, $snapshot->jsonSerialize());
         }
-        return $this->createJsonResponse($snapshot->toExpandedArray($expandFields));
+        return $this->createResponse($request, $snapshot->toExpandedArray($expandFields));
     }
 
     /**
@@ -189,9 +195,9 @@ final class ServerController
      *
      * @param PaginatedResult $result The paginated result.
      */
-    private function createPaginatedJsonResponse(PaginatedResult $result): ResponseInterface
+    private function createPaginatedJsonResponse(ServerRequestInterface $request, PaginatedResult $result): ResponseInterface
     {
-        $response = $this->createJsonResponse($result->items);
+        $response = $this->createResponse($request, $result->items);
 
         return $this->paginationService->applyHeaders($response, $result);
     }
@@ -200,10 +206,14 @@ final class ServerController
      * Create a paginated JSON response for snapshot items, handling expand.
      * Matches Yii2 REST serializer behavior: fields()=[] by default, expand adds extraFields.
      */
-    private function createPaginatedSnapshotResponse(PaginatedResult $result, array $expandFields): ResponseInterface
+    private function createPaginatedSnapshotResponse(
+        ServerRequestInterface $request,
+        PaginatedResult $result,
+        array $expandFields,
+    ): ResponseInterface
     {
         $items = $this->serializeSnapshots($result->items, $expandFields);
-        $response = $this->createJsonResponse($items);
+        $response = $this->createResponse($request, $items);
 
         return $this->paginationService->applyHeaders($response, $result);
     }
@@ -245,14 +255,9 @@ final class ServerController
      * @param mixed $data The data to encode as JSON.
      * @param int   $statusCode HTTP status code (default 200).
      */
-    private function createJsonResponse(mixed $data, int $statusCode = 200): ResponseInterface
+    private function createResponse(ServerRequestInterface $request, mixed $data, int $statusCode = 200): ResponseInterface
     {
-        $json = json_encode($data, JSON_THROW_ON_ERROR);
-        $stream = $this->streamFactory->createStream($json);
-
-        return $this->responseFactory->createResponse($statusCode)
-            ->withHeader('Content-Type', 'application/json')
-            ->withBody($stream);
+        return $this->restResponseFactory->create($request, $data, $statusCode);
     }
 
     /**
@@ -263,17 +268,8 @@ final class ServerController
      *
      * @see Requirement 10.3
      */
-    private function createErrorResponse(int $statusCode, string $message): ResponseInterface
+    private function createErrorResponse(ServerRequestInterface $request, int $statusCode, string $message): ResponseInterface
     {
-        $nameMap = [400 => 'Bad Request', 401 => 'Unauthorized', 403 => 'Forbidden', 404 => 'Not Found'];
-        $typeMap = [400 => 'yii\\web\\BadRequestHttpException', 401 => 'yii\\web\\UnauthorizedHttpException', 403 => 'yii\\web\\ForbiddenHttpException', 404 => 'yii\\web\\NotFoundHttpException'];
-
-        return $this->createJsonResponse([
-            'name' => $nameMap[$statusCode] ?? 'Error',
-            'message' => $message,
-            'code' => 0,
-            'status' => $statusCode,
-            'type' => $typeMap[$statusCode] ?? 'yii\\web\\HttpException',
-        ], $statusCode);
+        return $this->restResponseFactory->createError($request, $statusCode, $message);
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controller\V1;
 
 use App\Service\PhototypeQueryService;
+use App\Service\Yii2RestResponseFactory;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -22,43 +23,32 @@ final class PhototypeController
         private readonly PhototypeQueryService $phototypeQueryService,
         private readonly ResponseFactoryInterface $responseFactory,
         private readonly StreamFactoryInterface $streamFactory,
+        private readonly Yii2RestResponseFactory $restResponseFactory,
     ) {
     }
 
     public function info(ServerRequestInterface $request): ResponseInterface
     {
         $params = $request->getQueryParams();
-        $type = (string) ($params['type'] ?? '');
+        if (!isset($params['type']) || $params['type'] === '') {
+            return $this->createErrorResponse($request, 400, 'Missing required parameters: type');
+        }
+
+        $type = (string) $params['type'];
         $phototype = $this->phototypeQueryService->findInfoByType($type);
 
         if ($phototype === null) {
-            return $this->createErrorResponse(400, 'model not found.');
+            return $this->createErrorResponse($request, 400, 'model not found.');
         }
 
-        return $this->createJsonResponse($phototype);
+        return $this->restResponseFactory->create($request, $phototype);
     }
 
     /**
      * @param mixed $data
      */
-    private function createJsonResponse(mixed $data, int $statusCode = 200): ResponseInterface
+    private function createErrorResponse(ServerRequestInterface $request, int $statusCode, string $message): ResponseInterface
     {
-        $json = json_encode($data, JSON_THROW_ON_ERROR);
-        $stream = $this->streamFactory->createStream($json);
-
-        return $this->responseFactory->createResponse($statusCode)
-            ->withHeader('Content-Type', 'application/json')
-            ->withBody($stream);
-    }
-
-    private function createErrorResponse(int $statusCode, string $message): ResponseInterface
-    {
-        return $this->createJsonResponse([
-            'name' => 'Bad Request',
-            'message' => $message,
-            'code' => 0,
-            'status' => $statusCode,
-            'type' => 'yii\\web\\BadRequestHttpException',
-        ], $statusCode);
+        return $this->restResponseFactory->createError($request, $statusCode, $message);
     }
 }

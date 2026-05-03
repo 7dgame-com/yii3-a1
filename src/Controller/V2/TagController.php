@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controller\V2;
 
 use App\Service\SnapshotQueryService;
+use App\Service\Yii2RestResponseFactory;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -24,6 +25,7 @@ final class TagController
         private readonly SnapshotQueryService $snapshotQueryService,
         private readonly ResponseFactoryInterface $responseFactory,
         private readonly StreamFactoryInterface $streamFactory,
+        private readonly Yii2RestResponseFactory $restResponseFactory,
     ) {
     }
 
@@ -38,22 +40,6 @@ final class TagController
     {
         $tags = $this->snapshotQueryService->findTags();
 
-        return $this->createJsonResponse($tags);
-    }
-
-    /**
-     * Create a JSON success response with 200 status code.
-     *
-     * @param mixed $data       The data to encode as JSON.
-     * @param int   $statusCode HTTP status code (default 200).
-     */
-    private function createJsonResponse(mixed $data, int $statusCode = 200): ResponseInterface
-    {
-        $json = json_encode($data, JSON_THROW_ON_ERROR);
-        $stream = $this->streamFactory->createStream($json);
-
-        return $this->responseFactory->createResponse($statusCode)
-            ->withHeader('Content-Type', 'application/json')
-            ->withBody($stream);
+        return $this->restResponseFactory->create($request, $tags);
     }
 }

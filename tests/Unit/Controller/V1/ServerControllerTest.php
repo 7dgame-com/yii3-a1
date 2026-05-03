@@ -10,6 +10,7 @@ use App\Search\TagsSearch;
 use App\Service\PaginatedResult;
 use App\Service\PaginationService;
 use App\Service\SnapshotQueryService;
+use App\Service\Yii2RestResponseFactory;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseFactoryInterface;
@@ -69,6 +70,7 @@ final class ServerControllerTest extends TestCase
             $this->paginationService,
             $this->responseFactory,
             $this->streamFactory,
+            new Yii2RestResponseFactory($this->responseFactory, $this->streamFactory),
         );
     }
 
@@ -104,7 +106,22 @@ final class ServerControllerTest extends TestCase
         $this->controller->test();
 
         $this->assertArrayHasKey('Content-Type', $headerCalls);
-        $this->assertSame('application/json', $headerCalls['Content-Type']);
+        $this->assertSame('application/json; charset=UTF-8', $headerCalls['Content-Type']);
+    }
+
+    public function testTestEndpointHonorsApplicationXmlAccept(): void
+    {
+        $headerCalls = [];
+        $capturedBody = null;
+        $this->setupResponseWithHeaderAndBodyCapture($headerCalls, $capturedBody);
+
+        $this->controller->test($this->createRequestWithQueryParams([], accept: 'application/xml'));
+
+        $this->assertSame('application/xml; charset=UTF-8', $headerCalls['Content-Type']);
+        $this->assertSame(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<response>test</response>\n",
+            $capturedBody,
+        );
     }
 
     // ========================================================================
@@ -192,6 +209,27 @@ final class ServerControllerTest extends TestCase
         $this->assertNotNull($capturedBody);
         $decoded = json_decode($capturedBody, true);
         $this->assertIsArray($decoded);
+    }
+
+    public function testListPublicHonorsApplicationXmlAccept(): void
+    {
+        $query = $this->createActiveQueryMock(totalCount: 2, items: [[], []]);
+        $this->snapshotSearch->method('searchPublic')->willReturn($query);
+        $this->setupCachePassthrough();
+
+        $capturedBody = null;
+        $headerCalls = [];
+        $this->setupResponseWithHeaderAndBodyCapture($headerCalls, $capturedBody);
+
+        $request = $this->createRequestWithQueryParams([], accept: 'application/xml');
+
+        $this->controller->listPublic($request);
+
+        $this->assertSame('application/xml; charset=UTF-8', $headerCalls['Content-Type']);
+        $this->assertSame(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<response><item/><item/></response>\n",
+            $capturedBody,
+        );
     }
 
     // ========================================================================
@@ -579,8 +617,7 @@ final class ServerControllerTest extends TestCase
         $this->assertArrayHasKey('message', $decoded);
         $this->assertArrayHasKey('name', $decoded);
         $this->assertArrayHasKey('code', $decoded);
-        $this->assertArrayHasKey('type', $decoded);
-        $this->assertCount(5, $decoded, 'Error response should match Yii2 format: name, message, code, status, type');
+        $this->assertCount(4, $decoded, 'Error response should match Yii2 format: name, message, code, status');
     }
 
     // ========================================================================
@@ -590,13 +627,13 @@ final class ServerControllerTest extends TestCase
     /**
      * Create a mock ActiveQuery that returns the specified total count and empty items.
      */
-    private function createActiveQueryMock(int $totalCount): ActiveQuery&MockObject
+    private function createActiveQueryMock(int $totalCount, array $items = []): ActiveQuery&MockObject
     {
         $query = $this->createMock(ActiveQuery::class);
         $query->method('count')->willReturn((string) $totalCount);
         $query->method('offset')->willReturnSelf();
         $query->method('limit')->willReturnSelf();
-        $query->method('all')->willReturn([]);
+        $query->method('all')->willReturn($items);
 
         return $query;
     }
@@ -613,10 +650,17 @@ final class ServerControllerTest extends TestCase
     /**
      * Create a mock ServerRequestInterface with query params and optional attributes.
      */
-    private function createRequestWithQueryParams(array $queryParams, array $attributes = []): ServerRequestInterface
+    private function createRequestWithQueryParams(
+        array $queryParams,
+        array $attributes = [],
+        string $accept = '*/*',
+    ): ServerRequestInterface
     {
         $request = $this->createMock(ServerRequestInterface::class);
         $request->method('getQueryParams')->willReturn($queryParams);
+        $request->method('getHeaderLine')
+            ->with('Accept')
+            ->willReturn($accept);
         $request->method('getAttribute')
             ->willReturnCallback(function (string $name) use ($attributes) {
                 return $attributes[$name] ?? null;
