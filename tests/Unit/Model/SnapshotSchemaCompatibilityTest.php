@@ -79,9 +79,11 @@ final class SnapshotSchemaCompatibilityTest extends TestCase
     public function testSpaceColumnIsNotAnA1ExtraField(): void
     {
         $snapshot = new Snapshot();
+        $reflection = new ReflectionClass($snapshot);
+        $extraFieldsMap = $reflection->getMethod('getExtraFieldsMap')->invoke($snapshot);
 
         $this->assertSame([], $snapshot->jsonSerialize());
-        $this->assertArrayNotHasKey('space', $snapshot->toFullArray());
+        $this->assertArrayNotHasKey('space', $extraFieldsMap);
         $this->assertSame([], $snapshot->toExpandedArray(['space']));
     }
 
