@@ -111,44 +111,24 @@ class Snapshot extends ActiveRecord implements JsonSerializable
         return [
             'id' => fn() => $this->get('id'),
             'name' => function () {
-                try {
-                    $verse = $this->relation('verse');
-                    return $verse?->get('name') ?? '';
-                } catch (\Throwable) {
-                    return '';
-                }
+                return $this->findVerse()?->get('name') ?? '';
             },
             'description' => function () {
-                try {
-                    $verse = $this->relation('verse');
-                    return $verse?->get('description') ?? '';
-                } catch (\Throwable) {
-                    return '';
-                }
+                return $this->findVerse()?->get('description') ?? '';
             },
             'image' => function () {
-                try {
-                    $verse = $this->relation('verse');
-                    return $verse?->relation('image');
-                } catch (\Throwable) {
+                $image = $this->findFileById($this->findVerse()?->get('image_id'));
+                if ($image === null) {
                     return null;
                 }
+
+                return $image->toA1Array();
             },
             'author_id' => function () {
-                try {
-                    $verse = $this->relation('verse');
-                    return $verse?->get('author_id');
-                } catch (\Throwable) {
-                    return null;
-                }
+                return $this->findVerse()?->get('author_id');
             },
             'author' => function () {
-                try {
-                    $verse = $this->relation('verse');
-                    return $verse?->relation('author');
-                } catch (\Throwable) {
-                    return null;
-                }
+                return $this->findUserById($this->findVerse()?->get('author_id'));
             },
             'uuid' => fn() => $this->get('uuid'),
             'verse_id' => fn() => $this->get('verse_id'),
@@ -157,6 +137,71 @@ class Snapshot extends ActiveRecord implements JsonSerializable
             'metas' => fn() => $this->get('metas'),
             'resources' => fn() => $this->get('resources'),
             'managers' => fn() => $this->get('managers'),
+            'space' => fn() => $this->normalizeSpaceSnapshot($this->get('space')),
         ];
+    }
+
+    private function findVerse(): ?Verse
+    {
+        $verseId = $this->get('verse_id');
+        if ($verseId === null) {
+            return null;
+        }
+
+        try {
+            $verse = (new ActiveQuery(Verse::class))
+                ->andWhere(['id' => (int) $verseId])
+                ->one();
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return $verse instanceof Verse ? $verse : null;
+    }
+
+    private function findFileById(mixed $id): ?File
+    {
+        if ($id === null) {
+            return null;
+        }
+
+        try {
+            $file = (new ActiveQuery(File::class))
+                ->andWhere(['id' => (int) $id])
+                ->one();
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return $file instanceof File ? $file : null;
+    }
+
+    private function findUserById(mixed $id): ?User
+    {
+        if ($id === null) {
+            return null;
+        }
+
+        try {
+            $user = (new ActiveQuery(User::class))
+                ->andWhere(['id' => (int) $id])
+                ->one();
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return $user instanceof User ? $user : null;
+    }
+
+    private function normalizeSpaceSnapshot(mixed $space): mixed
+    {
+        if (is_string($space)) {
+            $decoded = json_decode($space, true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                return $decoded;
+            }
+        }
+
+        return $space;
     }
 }

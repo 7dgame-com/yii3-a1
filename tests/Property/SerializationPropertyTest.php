@@ -21,7 +21,7 @@ use PHPUnit\Framework\TestCase;
  * Yii2 Snapshot defines fields()=[] (empty), meaning jsonSerialize() returns [].
  * All data is exposed via extraFields() only when ?expand= is specified.
  * extraFields: id, name, description, image, author_id, author, uuid, verse_id,
- *              code, data, metas, resources, managers
+ *              code, data, metas, resources, managers, space
  */
 final class SerializationPropertyTest extends TestCase
 {
@@ -44,6 +44,7 @@ final class SerializationPropertyTest extends TestCase
         'metas',
         'resources',
         'managers',
+        'space',
     ];
 
     /**
@@ -223,7 +224,7 @@ final class SerializationPropertyTest extends TestCase
                 $expanded = $this->simulateToExpandedArray(
                     self::YII2_EXTRA_FIELDS,
                     $id, $verseId, $uuid, $code, $data, 'name', 'desc', 1,
-                    $metas, $resources, '{}',
+                    $metas, $resources, '{}', '{"name":"studio"}',
                 );
 
                 $this->assertSame($id, $expanded['id']);
@@ -233,6 +234,7 @@ final class SerializationPropertyTest extends TestCase
                 $this->assertSame($data, $expanded['data']);
                 $this->assertSame($metas, $expanded['metas']);
                 $this->assertSame($resources, $expanded['resources']);
+                $this->assertSame('{"name":"studio"}', $expanded['space']);
             });
     }
 
@@ -254,6 +256,7 @@ final class SerializationPropertyTest extends TestCase
         string $metas = '[]',
         string $resources = '[]',
         string $managers = '[]',
+        string $space = '{}',
     ): array {
         // Full extraFields map (mirrors Snapshot::getExtraFieldsMap)
         $available = [
@@ -270,6 +273,7 @@ final class SerializationPropertyTest extends TestCase
             'metas' => fn() => $metas,
             'resources' => fn() => $resources,
             'managers' => fn() => $managers,
+            'space' => fn() => $space,
         ];
 
         $result = [];

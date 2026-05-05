@@ -22,8 +22,8 @@ class Verse extends ActiveRecord
     public ?int $updater_id = null;
     public ?int $image_id = null;
     public int $version = 0;
-    public ?string $info = null;
-    public ?string $data = null;
+    public string|array|object|null $info = null;
+    public string|array|object|null $data = null;
     public \DateTimeImmutable|string|null $created_at = null;
     public \DateTimeImmutable|string|null $updated_at = null;
 

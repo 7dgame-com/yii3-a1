@@ -76,15 +76,20 @@ final class SnapshotSchemaCompatibilityTest extends TestCase
         }
     }
 
-    public function testSpaceColumnIsNotAnA1ExtraField(): void
+    public function testSpaceColumnIsAnA1ExtraField(): void
     {
         $snapshot = new Snapshot();
+        $snapshot->space = '{"name":"studio","data":{"fog":false}}';
+
         $reflection = new ReflectionClass($snapshot);
         $extraFieldsMap = $reflection->getMethod('getExtraFieldsMap')->invoke($snapshot);
 
         $this->assertSame([], $snapshot->jsonSerialize());
-        $this->assertArrayNotHasKey('space', $extraFieldsMap);
-        $this->assertSame([], $snapshot->toExpandedArray(['space']));
+        $this->assertArrayHasKey('space', $extraFieldsMap);
+        $this->assertSame(
+            ['space' => ['name' => 'studio', 'data' => ['fog' => false]]],
+            $snapshot->toExpandedArray(['space']),
+        );
     }
 
     private function propertyAllowsType(ReflectionProperty $property, string $typeName): bool

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use Yiisoft\Yii\Runner\Http\HttpApplicationRunner;
 
+error_reporting(E_ALL & ~E_DEPRECATED);
+
 /**
  * MrPP API - Yii3 HTTP Entry Point
  *
