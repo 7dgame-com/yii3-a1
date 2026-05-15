@@ -6,8 +6,10 @@ namespace App\Tests\Unit\Service;
 
 use App\Service\PaginatedResult;
 use App\Service\PaginationService;
+use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
+use Yiisoft\ActiveRecord\ActiveQuery;
 
 /**
  * Unit tests for PaginationService and PaginatedResult.
@@ -187,5 +189,32 @@ final class PaginationServiceTest extends TestCase
         foreach ($headerCalls as $name => $value) {
             $this->assertIsString($value, "Header $name value should be a string");
         }
+    }
+
+    /**
+     * Test paginate caps pageSize to Yii2-compatible default maximum.
+     */
+    public function testPaginateCapsPageSizeAtFifty(): void
+    {
+        $query = $this->createActiveQueryMock(1000);
+        $query->expects($this->once())
+            ->method('limit')
+            ->with(50)
+            ->willReturnSelf();
+
+        $result = $this->service->paginate($query, 1, 5000);
+
+        $this->assertSame(50, $result->perPage);
+        $this->assertSame(20, $result->pageCount);
+    }
+
+    private function createActiveQueryMock(int $totalCount, array $items = []): ActiveQuery&MockObject
+    {
+        $query = $this->createMock(ActiveQuery::class);
+        $query->method('count')->willReturn((string) $totalCount);
+        $query->method('offset')->willReturnSelf();
+        $query->method('all')->willReturn($items);
+
+        return $query;
     }
 }

@@ -23,6 +23,8 @@ use Yiisoft\ActiveRecord\ActiveQuery;
  */
 final class PaginationService
 {
+    private const MAX_PAGE_SIZE = 50;
+
     /**
      * Paginate an ActiveQuery.
      *
@@ -31,14 +33,14 @@ final class PaginationService
      *
      * @param ActiveQuery $query    The query to paginate.
      * @param int         $page     The current page number (1-based). Values < 1 are normalized to 1.
-     * @param int         $pageSize The number of items per page. Values < 1 are normalized to 1.
+     * @param int         $pageSize The number of items per page. Values outside 1..50 are normalized.
      * @return PaginatedResult The paginated result containing items and metadata.
      */
     public function paginate(ActiveQuery $query, int $page, int $pageSize): PaginatedResult
     {
         // Normalize inputs
         $page = max(1, $page);
-        $pageSize = max(1, $pageSize);
+        $pageSize = min(self::MAX_PAGE_SIZE, max(1, $pageSize));
 
         // Count total records
         $totalCount = (int) $query->count();

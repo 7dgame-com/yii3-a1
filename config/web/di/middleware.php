@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Middleware\CorsMiddleware;
 use App\Middleware\JwtAuthMiddleware;
+use App\Middleware\SnapshotScopeAuthMiddleware;
+use Psr\Container\ContainerInterface;
 
 /**
  * Middleware DI configuration.
@@ -12,4 +14,7 @@ use App\Middleware\JwtAuthMiddleware;
 return [
     CorsMiddleware::class => CorsMiddleware::class,
     JwtAuthMiddleware::class => JwtAuthMiddleware::class,
+    SnapshotScopeAuthMiddleware::class => static function (ContainerInterface $container): SnapshotScopeAuthMiddleware {
+        return new SnapshotScopeAuthMiddleware($container);
+    },
 ];

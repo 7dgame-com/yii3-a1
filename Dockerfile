@@ -30,4 +30,5 @@ RUN mkdir -p /app/runtime && echo "dev-jwt-secret-key-do-not-use-in-production" 
 
 EXPOSE 8080
 
+ENTRYPOINT ["sh", "docker/entrypoint.sh"]
 CMD ["php", "-S", "0.0.0.0:8080", "-t", "public"]

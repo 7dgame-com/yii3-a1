@@ -36,6 +36,11 @@ final class SystemController
      */
     public function index(ServerRequestInterface $request): ResponseInterface
     {
+        if (strtoupper($request->getMethod()) === 'HEAD') {
+            return $this->responseFactory->createResponse(200)
+                ->withHeader('Content-Type', 'application/json');
+        }
+
         return $this->createJsonResponse([
             'status' => 'ok',
             'message' => 'Service is operating normally',

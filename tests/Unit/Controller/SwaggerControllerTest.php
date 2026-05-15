@@ -414,6 +414,35 @@ final class SwaggerControllerTest extends TestCase
         $this->assertContains('/swagger/json-schema', $paths);
     }
 
+    /**
+     * Test that /v2/snapshots documents bearer auth for protected scopes.
+     * Validates: Requirement 7.3, 9.1
+     */
+    public function testJsonSchemaMarksV2SnapshotsWithBearerAuth(): void
+    {
+        $controller = new SwaggerController(
+            $this->responseFactory,
+            $this->streamFactory,
+            'admin',
+            'secret',
+        );
+
+        $capturedBody = null;
+        $capturedStatusCode = null;
+        $capturedHeaders = [];
+        $this->setupResponseCaptureWithBody($capturedBody, $capturedStatusCode, $capturedHeaders);
+
+        $request = $this->createRequestWithAuth('Basic ' . base64_encode('admin:secret'));
+
+        $controller->jsonSchema($request);
+
+        $decoded = json_decode((string) $capturedBody, true);
+        $operation = $decoded['paths']['/v2/snapshots']['get'] ?? [];
+
+        $this->assertSame([['bearerAuth' => []]], $operation['security'] ?? null);
+        $this->assertArrayHasKey('401', $operation['responses'] ?? []);
+    }
+
     // ========================================================================
     // Helpers
     // ========================================================================

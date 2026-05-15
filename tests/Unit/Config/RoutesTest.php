@@ -12,6 +12,7 @@ use App\Controller\V2\SnapshotController;
 use App\Controller\V2\SystemController;
 use App\Controller\V2\TagController;
 use App\Middleware\JwtAuthMiddleware;
+use App\Middleware\SnapshotScopeAuthMiddleware;
 use PHPUnit\Framework\TestCase;
 use Yiisoft\Router\Route;
 
@@ -165,6 +166,8 @@ final class RoutesTest extends TestCase
         $this->assertNotNull($route, 'Route v2.snapshots.index should exist');
         $this->assertSame('/v2/snapshots', $route->getData('pattern'));
         $this->assertSame(['GET'], $route->getData('methods'));
+        $this->assertTrue($route->getData('hasMiddlewares'), 'Snapshots route should have conditional auth middleware');
+        $this->assertRouteHasMiddleware($route, SnapshotScopeAuthMiddleware::class);
     }
 
     public function testV2SnapshotsViewRoute(): void
@@ -241,7 +244,6 @@ final class RoutesTest extends TestCase
             'v1.server.tags',
             'v1.server.snapshot',
             'v1.phototype.info',
-            'v2.snapshots.index',
             'v2.snapshots.view',
             'v2.tags.index',
             'v2.system.index',
@@ -259,6 +261,13 @@ final class RoutesTest extends TestCase
                 "Route {$name} should NOT have JwtAuthMiddleware"
             );
         }
+    }
+
+    public function testV2SnapshotsIndexHasConditionalScopeAuthMiddleware(): void
+    {
+        $route = $this->findRouteByName('v2.snapshots.index');
+        $this->assertNotNull($route, 'Route v2.snapshots.index should exist');
+        $this->assertRouteHasMiddleware($route, SnapshotScopeAuthMiddleware::class);
     }
 
     public function testProtectedRoutesHaveJwtMiddleware(): void

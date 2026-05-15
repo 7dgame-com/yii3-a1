@@ -204,6 +204,7 @@ use Psr\Http\Message\StreamFactoryInterface;
     summary: 'List snapshots by scope',
     description: 'scope=group and scope=private require a JWT bearer token.',
     tags: ['V2'],
+    security: [['bearerAuth' => []]],
     parameters: [
         new OA\QueryParameter(name: 'scope', description: 'Snapshot scope', schema: new OA\Schema(type: 'string', enum: ['public', 'checkin', 'group', 'private'])),
         new OA\QueryParameter(name: 'pageSize', description: 'Page size', schema: new OA\Schema(type: 'integer')),
@@ -214,6 +215,7 @@ use Psr\Http\Message\StreamFactoryInterface;
     responses: [
         new OA\Response(response: 200, description: 'Snapshots'),
         new OA\Response(response: 400, description: 'Invalid scope'),
+        new OA\Response(response: 401, description: 'Unauthorized'),
         new OA\Response(response: 403, description: 'Login required'),
     ],
 )]

@@ -1,4 +1,6 @@
 /vendor/
+/config/.merge-plan.php
+/runtime/jwt.key
 /runtime/logs/*.log
 .env
 .phpunit.result.cache

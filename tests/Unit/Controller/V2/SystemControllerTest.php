@@ -179,13 +179,57 @@ final class SystemControllerTest extends TestCase
         $this->assertArrayHasKey('timestamp', $decoded);
     }
 
+    /**
+     * Test that HEAD returns headers only without creating a response body.
+     * Validates: Requirement 5.7
+     */
+    public function testHeadResponseDoesNotCreateBody(): void
+    {
+        $controller = new SystemController(
+            $this->responseFactory,
+            $this->streamFactory,
+        );
+
+        $capturedStatusCode = null;
+        $headerCalls = [];
+
+        $this->streamFactory
+            ->expects($this->never())
+            ->method('createStream');
+
+        $response = $this->createMock(ResponseInterface::class);
+        $response->method('withHeader')
+            ->willReturnCallback(function (string $name, string $value) use ($response, &$headerCalls) {
+                $headerCalls[$name] = $value;
+                return $response;
+            });
+        $response->expects($this->never())->method('withBody');
+
+        $this->responseFactory
+            ->method('createResponse')
+            ->willReturnCallback(function (int $statusCode) use ($response, &$capturedStatusCode) {
+                $capturedStatusCode = $statusCode;
+                return $response;
+            });
+
+        $request = $this->createRequest('HEAD');
+
+        $controller->index($request);
+
+        $this->assertSame(200, $capturedStatusCode);
+        $this->assertSame('application/json', $headerCalls['Content-Type']);
+    }
+
     // ========================================================================
     // Helpers
     // ========================================================================
 
-    private function createRequest(): ServerRequestInterface
+    private function createRequest(string $method = 'GET'): ServerRequestInterface
     {
-        return $this->createMock(ServerRequestInterface::class);
+        $request = $this->createMock(ServerRequestInterface::class);
+        $request->method('getMethod')->willReturn($method);
+
+        return $request;
     }
 
     private function setupResponseCapture(?string &$capturedBody, ?int &$capturedStatusCode): void

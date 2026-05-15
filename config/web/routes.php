@@ -11,6 +11,7 @@ use App\Controller\V2\SnapshotController;
 use App\Controller\V2\SystemController;
 use App\Controller\V2\TagController;
 use App\Middleware\JwtAuthMiddleware;
+use App\Middleware\SnapshotScopeAuthMiddleware;
 use Yiisoft\Router\Route;
 
 /**
@@ -78,6 +79,7 @@ return [
     // V2 Routes
     // =========================================================================
     Route::get('/v2/snapshots')
+        ->middleware(SnapshotScopeAuthMiddleware::class)
         ->action([SnapshotController::class, 'index'])
         ->name('v2.snapshots.index'),
 
