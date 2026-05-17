@@ -1,5 +1,7 @@
 /vendor/
 /runtime/logs/*.log
+/runtime/*.key
+/config/.merge-plan.php
 .env
 .phpunit.result.cache
 composer.lock
