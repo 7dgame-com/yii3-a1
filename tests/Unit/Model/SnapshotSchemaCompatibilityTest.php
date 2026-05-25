@@ -103,7 +103,7 @@ final class SnapshotSchemaCompatibilityTest extends TestCase
         );
     }
 
-    public function testExpandedSnapshotOutputUsesA1ExtraFieldOrderAndReturnsSpace(): void
+    public function testExpandedSnapshotOutputUsesA1JsonFieldOrderAndReturnsSpace(): void
     {
         $snapshot = new Snapshot();
         $snapshot->id = 3;
@@ -113,10 +113,10 @@ final class SnapshotSchemaCompatibilityTest extends TestCase
         $snapshot->resources = '[]';
         $snapshot->space = '{"type":"immersal"}';
 
-        $expanded = $snapshot->toExpandedArray(['id', 'name', 'data', 'metas', 'resources', 'uuid', 'image', 'space']);
+        $expanded = $snapshot->toExpandedArray(['id', 'data', 'metas', 'resources', 'uuid', 'space']);
 
         $this->assertSame(
-            ['id', 'name', 'image', 'uuid', 'data', 'metas', 'resources', 'space'],
+            ['id', 'uuid', 'data', 'metas', 'resources', 'space'],
             array_keys($expanded),
         );
         $this->assertSame(['type' => 'immersal'], $expanded['space']);
