@@ -191,7 +191,7 @@ final class SnapshotQueryService
             function () use ($verseId): ?\App\Model\Snapshot {
                 return $this->createSnapshotQuery()
                     ->andWhere(['snapshot.verse_id' => $verseId])
-                    ->orderBy(['snapshot.id' => SORT_DESC])
+                    ->orderBy(['snapshot.id' => SORT_ASC])
                     ->one();
             },
             self::CACHE_TTL,

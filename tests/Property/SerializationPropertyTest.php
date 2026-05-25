@@ -191,21 +191,21 @@ final class SerializationPropertyTest extends TestCase
     }
 
     /**
-     * Property 19d: Base field values are preserved in expanded output (round-trip).
+     * Property 19d: Scalar base fields are preserved and JSON-like fields decode like Yii2.
      *
-     * For any random input, expanded base fields must exactly match input values.
+     * For any random scalar input, expanded scalar fields must exactly match input
+     * values. Snapshot JSON columns (metas/resources/managers/space) must decode
+     * valid JSON strings before the final REST response is encoded.
      *
      * **Validates: Requirements 10.4**
      *
      * @eris-repeat 100
      */
-    public function testExpandedBaseFieldsPreserveValues(): void
+    public function testExpandedBaseFieldsPreserveScalarsAndDecodeJsonColumns(): void
     {
         $this->forAll(
             Generator\int(),
             Generator\int(),
-            Generator\string(),
-            Generator\string(),
             Generator\string(),
             Generator\string(),
             Generator\string(),
@@ -217,14 +217,15 @@ final class SerializationPropertyTest extends TestCase
                 string $uuid,
                 string $code,
                 string $data,
-                string $metas,
-                string $resources,
                 int $createdBy,
             ): void {
                 $expanded = $this->simulateToExpandedArray(
                     self::YII2_EXTRA_FIELDS,
                     $id, $verseId, $uuid, $code, $data, 'name', 'desc', 1,
-                    $metas, $resources, '{}', '{"name":"studio"}',
+                    '[{"id":730}]',
+                    '[{"id":333}]',
+                    '[{"id":1}]',
+                    '{"type":"immersal"}',
                 );
 
                 $this->assertSame($id, $expanded['id']);
@@ -232,9 +233,10 @@ final class SerializationPropertyTest extends TestCase
                 $this->assertSame($uuid, $expanded['uuid']);
                 $this->assertSame($code, $expanded['code']);
                 $this->assertSame($data, $expanded['data']);
-                $this->assertSame($metas, $expanded['metas']);
-                $this->assertSame($resources, $expanded['resources']);
-                $this->assertSame('{"name":"studio"}', $expanded['space']);
+                $this->assertSame([['id' => 730]], $expanded['metas']);
+                $this->assertSame([['id' => 333]], $expanded['resources']);
+                $this->assertSame([['id' => 1]], $expanded['managers']);
+                $this->assertSame(['type' => 'immersal'], $expanded['space']);
             });
     }
 
@@ -270,19 +272,26 @@ final class SerializationPropertyTest extends TestCase
             'verse_id' => fn() => $verseId,
             'code' => fn() => $code,
             'data' => fn() => $data,
-            'metas' => fn() => $metas,
-            'resources' => fn() => $resources,
-            'managers' => fn() => $managers,
-            'space' => fn() => $space,
+            'metas' => fn() => $this->normalizeJsonSnapshot($metas),
+            'resources' => fn() => $this->normalizeJsonSnapshot($resources),
+            'managers' => fn() => $this->normalizeJsonSnapshot($managers),
+            'space' => fn() => $this->normalizeJsonSnapshot($space),
         ];
 
+        $requested = array_flip($requestedFields);
         $result = [];
-        foreach ($requestedFields as $field) {
-            if (isset($available[$field])) {
-                $result[$field] = $available[$field]();
+        foreach ($available as $field => $getter) {
+            if (isset($requested[$field])) {
+                $result[$field] = $getter();
             }
         }
 
         return $result;
+    }
+
+    private function normalizeJsonSnapshot(string $value): mixed
+    {
+        $decoded = json_decode($value, true);
+        return json_last_error() === JSON_ERROR_NONE ? $decoded : $value;
     }
 }

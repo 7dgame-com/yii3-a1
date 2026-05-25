@@ -127,7 +127,9 @@ final class Yii2RestResponseFactory
 
     private function createJsonResponse(mixed $data, int $statusCode): ResponseInterface
     {
-        $stream = $this->streamFactory->createStream(json_encode($data, JSON_THROW_ON_ERROR));
+        $stream = $this->streamFactory->createStream(
+            json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+        );
 
         return $this->responseFactory->createResponse($statusCode)
             ->withHeader('Content-Type', 'application/json; charset=UTF-8')

@@ -76,19 +76,60 @@ final class SnapshotSchemaCompatibilityTest extends TestCase
         }
     }
 
-    public function testSpaceColumnIsAnA1ExtraField(): void
+    public function testJsonSnapshotColumnsAreDecodedWhenExpanded(): void
     {
         $snapshot = new Snapshot();
-        $snapshot->space = '{"name":"studio","data":{"fog":false}}';
+        $snapshot->metas = '[{"id":730,"type":"entity"}]';
+        $snapshot->resources = '[{"id":333,"type":"polygen"}]';
+        $snapshot->managers = '[{"id":1}]';
+        $snapshot->space = '{"type":"immersal"}';
 
         $reflection = new ReflectionClass($snapshot);
         $extraFieldsMap = $reflection->getMethod('getExtraFieldsMap')->invoke($snapshot);
 
         $this->assertSame([], $snapshot->jsonSerialize());
-        $this->assertArrayHasKey('space', $extraFieldsMap);
+        foreach (['metas', 'resources', 'managers', 'space'] as $field) {
+            $this->assertArrayHasKey($field, $extraFieldsMap);
+        }
+
         $this->assertSame(
-            ['space' => ['name' => 'studio', 'data' => ['fog' => false]]],
-            $snapshot->toExpandedArray(['space']),
+            [
+                'metas' => [['id' => 730, 'type' => 'entity']],
+                'resources' => [['id' => 333, 'type' => 'polygen']],
+                'managers' => [['id' => 1]],
+                'space' => ['type' => 'immersal'],
+            ],
+            $snapshot->toExpandedArray(['metas', 'resources', 'managers', 'space']),
+        );
+    }
+
+    public function testExpandedSnapshotOutputUsesA1ExtraFieldOrderAndReturnsSpace(): void
+    {
+        $snapshot = new Snapshot();
+        $snapshot->id = 3;
+        $snapshot->uuid = '88f275bf-9425-3240-8309-ecbc6a535041';
+        $snapshot->data = '{"type":"Verse"}';
+        $snapshot->metas = '[]';
+        $snapshot->resources = '[]';
+        $snapshot->space = '{"type":"immersal"}';
+
+        $expanded = $snapshot->toExpandedArray(['id', 'name', 'data', 'metas', 'resources', 'uuid', 'image', 'space']);
+
+        $this->assertSame(
+            ['id', 'name', 'image', 'uuid', 'data', 'metas', 'resources', 'space'],
+            array_keys($expanded),
+        );
+        $this->assertSame(['type' => 'immersal'], $expanded['space']);
+    }
+
+    public function testInvalidJsonSnapshotColumnsRemainUnchangedWhenExpanded(): void
+    {
+        $snapshot = new Snapshot();
+        $snapshot->metas = 'not-json';
+
+        $this->assertSame(
+            ['metas' => 'not-json'],
+            $snapshot->toExpandedArray(['metas']),
         );
     }
 

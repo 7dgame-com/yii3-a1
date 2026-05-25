@@ -62,6 +62,19 @@ final class Yii2RestResponseFactoryTest extends TestCase
         );
     }
 
+    public function testCreatesYii2StyleUnescapedJson(): void
+    {
+        $response = $this->factory->create(
+            $this->createRequest('application/json'),
+            ['name' => '中国空间站', 'url' => 'https://example.com/a/b.jpg'],
+        );
+
+        $this->assertSame(
+            '{"name":"中国空间站","url":"https://example.com/a/b.jpg"}',
+            (string) $response->getBody(),
+        );
+    }
+
     public function testUnsupportedAcceptReturnsYii2NotAcceptableJson(): void
     {
         $response = $this->factory->create(

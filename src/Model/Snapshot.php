@@ -73,11 +73,12 @@ class Snapshot extends ActiveRecord implements JsonSerializable
     public function toExpandedArray(array $expandFields): array
     {
         $available = $this->getExtraFieldsMap();
+        $requested = array_flip($expandFields);
         $result = [];
 
-        foreach ($expandFields as $field) {
-            if (isset($available[$field])) {
-                $result[$field] = $available[$field]();
+        foreach ($available as $field => $getter) {
+            if (isset($requested[$field])) {
+                $result[$field] = $getter();
             }
         }
 
@@ -134,10 +135,10 @@ class Snapshot extends ActiveRecord implements JsonSerializable
             'verse_id' => fn() => $this->get('verse_id'),
             'code' => fn() => $this->get('code'),
             'data' => fn() => $this->get('data'),
-            'metas' => fn() => $this->get('metas'),
-            'resources' => fn() => $this->get('resources'),
-            'managers' => fn() => $this->get('managers'),
-            'space' => fn() => $this->normalizeSpaceSnapshot($this->get('space')),
+            'metas' => fn() => $this->normalizeJsonSnapshot($this->get('metas')),
+            'resources' => fn() => $this->normalizeJsonSnapshot($this->get('resources')),
+            'managers' => fn() => $this->normalizeJsonSnapshot($this->get('managers')),
+            'space' => fn() => $this->normalizeJsonSnapshot($this->get('space')),
         ];
     }
 
@@ -193,15 +194,15 @@ class Snapshot extends ActiveRecord implements JsonSerializable
         return $user instanceof User ? $user : null;
     }
 
-    private function normalizeSpaceSnapshot(mixed $space): mixed
+    private function normalizeJsonSnapshot(mixed $value): mixed
     {
-        if (is_string($space)) {
-            $decoded = json_decode($space, true);
+        if (is_string($value)) {
+            $decoded = json_decode($value, true);
             if (json_last_error() === JSON_ERROR_NONE) {
                 return $decoded;
             }
         }
 
-        return $space;
+        return $value;
     }
 }
