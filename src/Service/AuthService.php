@@ -79,14 +79,27 @@ final class AuthService
      */
     public function refresh(string $refreshToken): array
     {
-        $userId = $this->refreshTokenService->validate($refreshToken);
+        $normalizedToken = $this->normalizeRefreshTokenInput($refreshToken);
+        $userId = $this->refreshTokenService->validate($normalizedToken);
+        $deleteConsumedRefreshToken = true;
+        $linked = null;
 
         if ($userId === null) {
+            $linked = $this->findLinkedLoginCode($normalizedToken);
+            if ($linked !== null) {
+                $userId = (int) $linked->get('user_id');
+                $deleteConsumedRefreshToken = false;
+            }
+        }
+
+        if ($userId === null || $userId <= 0) {
             throw new RuntimeException('Refresh token is invalid.', 401);
         }
 
-        // Delete the old refresh token
-        $this->refreshTokenService->delete($refreshToken);
+        if ($deleteConsumedRefreshToken) {
+            // Delete the old refresh token
+            $this->refreshTokenService->delete($normalizedToken);
+        }
 
         $user = (new ActiveQuery(User::class))
             ->where(['id' => $userId])
@@ -97,6 +110,10 @@ final class AuthService
         }
 
         $tokenData = $this->generateTokenPair($userId);
+        if ($linked !== null) {
+            $linked->set('key', hash('sha256', $tokenData['refreshToken']));
+            $linked->update(['key']);
+        }
 
         return [
             'success' => true,
@@ -120,9 +137,7 @@ final class AuthService
      */
     public function keyToToken(string $key): array
     {
-        $userLinked = (new ActiveQuery(UserLinked::class))
-            ->where(['key' => $key])
-            ->one();
+        $userLinked = $this->findLinkedLoginCode($this->normalizeRefreshTokenInput($key));
 
         if ($userLinked === null) {
             throw new RuntimeException('Linked key is invalid.', 400);
@@ -151,6 +166,40 @@ final class AuthService
             'token' => $tokenData,
             'user' => $user,
         ];
+    }
+
+    private function normalizeRefreshTokenInput(string $refreshToken): string
+    {
+        $token = trim($refreshToken);
+
+        if (preg_match('/(?:^|[?&])web_([^&#\s]+)/', $token, $matches) === 1) {
+            return $matches[1];
+        }
+
+        if (str_starts_with($token, 'web_')) {
+            return substr($token, 4);
+        }
+
+        return $token;
+    }
+
+    private function findLinkedLoginCode(string $loginCode): ?UserLinked
+    {
+        if (strlen($loginCode) < 32) {
+            return null;
+        }
+
+        $lookupKeys = [$loginCode];
+        $hashedLoginCode = hash('sha256', $loginCode);
+        if (!hash_equals($loginCode, $hashedLoginCode)) {
+            $lookupKeys[] = $hashedLoginCode;
+        }
+
+        $linked = (new ActiveQuery(UserLinked::class))
+            ->where(['key' => $lookupKeys])
+            ->one();
+
+        return $linked instanceof UserLinked ? $linked : null;
     }
 
     /**
