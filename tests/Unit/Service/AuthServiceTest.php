@@ -7,6 +7,8 @@ namespace App\Tests\Unit\Service;
 use App\Service\AuthService;
 use App\Service\JwtService;
 use App\Service\RefreshTokenService;
+use DateTimeImmutable;
+use DateTimeZone;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use Yiisoft\Db\Connection\ConnectionInterface;
@@ -119,64 +121,51 @@ final class AuthServiceTest extends TestCase
         $this->refreshTokenService->delete($result['token']['refreshToken']);
     }
 
-    public function testRefreshAcceptsBareLinkedLoginCode(): void
+    public function testRefreshAcceptsReusableBareLinkedLoginCode(): void
     {
         $loginCode = str_repeat('a', 64);
-
-        $command = $this->createMock(CommandInterface::class);
-        $command
-            ->method('queryOne')
-            ->willReturnOnConsecutiveCalls(
-                ['id' => 1, 'user_id' => 42, 'key' => hash('sha256', $loginCode)],
-                ['id' => 42, 'nickname' => 'testuser'],
-            );
-        $command->method('execute')->willReturn(1);
-        $command->method('queryAll')->willReturn([]);
-
-        $quoter = $this->createMock(QuoterInterface::class);
-        $quoter->method('quoteTableName')->willReturnCallback(fn ($name) => "`$name`");
-        $quoter->method('quoteColumnName')->willReturnCallback(fn ($name) => "`$name`");
-        $quoter->method('quoteSql')->willReturnCallback(fn ($sql) => $sql);
-        $quoter->method('getRawTableName')->willReturnCallback(fn ($name) => trim($name, '{}%`'));
-
-        $col = $this->createMock(ColumnInterface::class);
-        $col->method('phpTypecast')->willReturnCallback(fn ($value) => $value);
-
-        $tableSchema = $this->createMock(TableSchemaInterface::class);
-        $tableSchema->method('getColumns')->willReturn([
-            'id' => $col,
-            'user_id' => $col,
-            'key' => $col,
-            'nickname' => $col,
-        ]);
-        $tableSchema->method('getColumn')->willReturn($col);
-        $tableSchema->method('getPrimaryKey')->willReturn(['id']);
-
-        $schema = $this->createMock(SchemaInterface::class);
-        $schema->method('getTableSchema')->willReturn($tableSchema);
-
-        $queryBuilder = $this->createMock(QueryBuilderInterface::class);
-        $queryBuilder->method('build')->willReturn(['SELECT * FROM test', []]);
-
-        $connection = $this->createMock(ConnectionInterface::class);
-        $connection->method('createCommand')->willReturn($command);
-        $connection->method('getQueryBuilder')->willReturn($queryBuilder);
-        $connection->method('getTablePrefix')->willReturn('');
-        $connection->method('getQuoter')->willReturn($quoter);
-        $connection->method('getSchema')->willReturn($schema);
-        $connection->method('getTableSchema')->willReturn($tableSchema);
-
-        ConnectionProvider::set($connection);
+        $createdAt = $this->shanghaiTime('now');
+        $linkedRow = ['id' => 1, 'user_id' => 42, 'key' => hash('sha256', $loginCode), 'created_at' => $createdAt];
+        $userRow = ['id' => 42, 'nickname' => 'testuser'];
+        $this->useLinkedLoginCodeConnection([$linkedRow, $userRow, $linkedRow, $userRow]);
 
         $authService = new AuthService($this->jwtService, $this->refreshTokenService);
-        $result = $authService->refresh($loginCode);
+        $first = $authService->refresh($loginCode);
+        $second = $authService->refresh($loginCode);
 
-        $this->assertTrue($result['success']);
-        $this->assertSame('refresh', $result['message']);
-        $this->assertNotEmpty($result['token']['accessToken']);
-        $this->assertNotEmpty($result['token']['refreshToken']);
-        $this->assertSame(42, $this->refreshTokenService->validate($result['token']['refreshToken']));
-        $this->refreshTokenService->delete($result['token']['refreshToken']);
+        $this->assertTrue($first['success']);
+        $this->assertTrue($second['success']);
+        $this->assertSame('refresh', $first['message']);
+        $this->assertSame('refresh', $second['message']);
+        $this->assertNotEmpty($first['token']['accessToken']);
+        $this->assertNotEmpty($second['token']['accessToken']);
+        $this->assertNotEmpty($first['token']['refreshToken']);
+        $this->assertNotEmpty($second['token']['refreshToken']);
+        $this->assertNotSame($first['token']['refreshToken'], $second['token']['refreshToken']);
+        $this->assertSame(42, $this->refreshTokenService->validate($first['token']['refreshToken']));
+        $this->assertSame(42, $this->refreshTokenService->validate($second['token']['refreshToken']));
+        $this->refreshTokenService->delete($first['token']['refreshToken']);
+        $this->refreshTokenService->delete($second['token']['refreshToken']);
+    }
+
+    public function testRefreshThrows401ForExpiredLinkedLoginCode(): void
+    {
+        $loginCode = str_repeat('b', 64);
+        $this->useLinkedLoginCodeConnection([
+            [
+                'id' => 1,
+                'user_id' => 42,
+                'key' => hash('sha256', $loginCode),
+                'created_at' => $this->shanghaiTime('-2 minutes'),
+            ],
+        ]);
+
+        $authService = new AuthService($this->jwtService, $this->refreshTokenService);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionCode(401);
+        $this->expectExceptionMessage('Refresh token is invalid.');
+        $authService->refresh($loginCode);
     }
 
     public function testRefreshThrows401ForInvalidToken(): void
@@ -205,5 +194,54 @@ final class AuthServiceTest extends TestCase
         $this->expectExceptionCode(401);
         $authService->refresh($refreshToken);
         $this->refreshTokenService->delete($result['token']['refreshToken']);
+    }
+
+    private function useLinkedLoginCodeConnection(array $queryOneResults): void
+    {
+        $command = $this->createMock(CommandInterface::class);
+        $command->method('queryOne')->willReturnOnConsecutiveCalls(...$queryOneResults);
+        $command->expects($this->never())->method('execute');
+        $command->method('queryAll')->willReturn([]);
+
+        $quoter = $this->createMock(QuoterInterface::class);
+        $quoter->method('quoteTableName')->willReturnCallback(fn ($name) => "`$name`");
+        $quoter->method('quoteColumnName')->willReturnCallback(fn ($name) => "`$name`");
+        $quoter->method('quoteSql')->willReturnCallback(fn ($sql) => $sql);
+        $quoter->method('getRawTableName')->willReturnCallback(fn ($name) => trim($name, '{}%`'));
+
+        $col = $this->createMock(ColumnInterface::class);
+        $col->method('phpTypecast')->willReturnCallback(fn ($value) => $value);
+
+        $tableSchema = $this->createMock(TableSchemaInterface::class);
+        $tableSchema->method('getColumns')->willReturn([
+            'id' => $col,
+            'user_id' => $col,
+            'key' => $col,
+            'created_at' => $col,
+            'nickname' => $col,
+        ]);
+        $tableSchema->method('getColumn')->willReturn($col);
+        $tableSchema->method('getPrimaryKey')->willReturn(['id']);
+
+        $schema = $this->createMock(SchemaInterface::class);
+        $schema->method('getTableSchema')->willReturn($tableSchema);
+
+        $queryBuilder = $this->createMock(QueryBuilderInterface::class);
+        $queryBuilder->method('build')->willReturn(['SELECT * FROM test', []]);
+
+        $connection = $this->createMock(ConnectionInterface::class);
+        $connection->method('createCommand')->willReturn($command);
+        $connection->method('getQueryBuilder')->willReturn($queryBuilder);
+        $connection->method('getTablePrefix')->willReturn('');
+        $connection->method('getQuoter')->willReturn($quoter);
+        $connection->method('getSchema')->willReturn($schema);
+        $connection->method('getTableSchema')->willReturn($tableSchema);
+
+        ConnectionProvider::set($connection);
+    }
+
+    private function shanghaiTime(string $modifier): string
+    {
+        return (new DateTimeImmutable($modifier, new DateTimeZone('Asia/Shanghai')))->format('Y-m-d H:i:s');
     }
 }

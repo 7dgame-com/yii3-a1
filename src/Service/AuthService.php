@@ -109,17 +109,11 @@ final class AuthService
             throw new RuntimeException('User is not found.', 400);
         }
 
-        $tokenData = $this->generateTokenPair($userId);
-        if ($linked !== null) {
-            $linked->set('key', hash('sha256', $tokenData['refreshToken']));
-            $linked->update(['key']);
-        }
-
         return [
             'success' => true,
             'message' => 'refresh',
             'nickname' => $user->get('nickname') ?? '',
-            'token' => $tokenData,
+            'token' => $this->generateTokenPair($userId),
         ];
     }
 
@@ -199,7 +193,11 @@ final class AuthService
             ->where(['key' => $lookupKeys])
             ->one();
 
-        return $linked instanceof UserLinked ? $linked : null;
+        if (!$linked instanceof UserLinked || $linked->isLoginCodeExpired()) {
+            return null;
+        }
+
+        return $linked;
     }
 
     /**
