@@ -25,8 +25,9 @@ COPY . .
 # Re-run to pick up autoload & scripts
 RUN composer install --no-interaction --prefer-dist
 
-# Generate a default JWT key for dev/test
-RUN mkdir -p /app/runtime && echo "dev-jwt-secret-key-do-not-use-in-production" > /app/runtime/jwt.key
+# The signing key is injected at runtime.  Do not bake a known key into the
+# image, even for development: images are frequently promoted between stages.
+RUN mkdir -p /app/runtime
 
 EXPOSE 8080
 
