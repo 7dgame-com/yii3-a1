@@ -1,5 +1,6 @@
 vendor/
 .git/
 .kiro/
-runtime/logs/*
+runtime/
+*.key
 .env
