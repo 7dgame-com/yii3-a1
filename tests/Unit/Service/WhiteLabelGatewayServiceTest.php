@@ -22,7 +22,7 @@ final class WhiteLabelGatewayServiceTest extends TestCase
     private const DOMAIN_ID = 34;
     private const INTERNAL_TOKEN = '0123456789abcdef0123456789abcdef';
     private const ETAG = '"wl-o12-d34-or4-dr7"';
-    private const CONFIG_JSON = '{"version":1,"organization":{"id":12,"name":"academy","title":"Academy","revision":4,"schemaVersion":1,"config":{"locale":"zh-CN"}},"domain":{"id":34,"host":"ar.example.com","revision":7,"schemaVersion":2,"config":{"primaryColor":"#2563EB"}}}';
+    private const CONFIG_JSON = '{"version":1,"organization":{"id":12,"name":"academy","title":"Academy","revision":4,"schemaVersion":1,"config":{"locale":"zh-CN"}},"domain":{"id":34,"configKey":"dev.xrugc.com","revision":7,"schemaVersion":2,"config":{"name":"dev.xrugc.com","description":"XR UGC Dev","is_active":true,"fallback_domain":null,"default_config":{"primaryColor":"#2563EB"},"configs":{"zh-CN":{}}}}}';
 
     public function testCallsOnlyFixedResolveEndpointAndForwardsConditionalHeader(): void
     {
@@ -62,6 +62,51 @@ final class WhiteLabelGatewayServiceTest extends TestCase
         $this->assertSame('application/vnd.7dgame.whitelabel+json; charset=utf-8', $result->contentType);
         $this->assertSame('"new-etag"', $result->etag);
         $this->assertSame('private, max-age=60', $result->cacheControl);
+    }
+
+    public function testAcceptsA253CharacterDomainConfigKeyAtTheSchemaBoundary(): void
+    {
+        $configKey = str_repeat('a', 63)
+            . '.' . str_repeat('b', 63)
+            . '.' . str_repeat('c', 63)
+            . '.' . str_repeat('d', 61);
+        $body = self::configurationJson($configKey);
+        $response = $this->response(200, $body, [
+            'Content-Type' => 'application/json',
+            'ETag' => self::ETAG,
+            'Cache-Control' => 'private, max-age=60',
+        ]);
+
+        $result = $this->createService($this->clientReturning($response))->fetch(
+            self::ORGANIZATION_ID,
+            self::DOMAIN_ID,
+        );
+
+        $this->assertSame(253, strlen($configKey));
+        $this->assertSame(200, $result->statusCode);
+        $this->assertSame($body, $result->body);
+    }
+
+    public function testAllowsSelfFallbackMetadataWithoutRecursiveLookup(): void
+    {
+        $body = self::configurationJson('dev.xrugc.com', [
+            'fallback_domain' => 'dev.xrugc.com',
+            'default_config' => (object) [],
+            'configs' => (object) [],
+        ]);
+        $response = $this->response(200, $body, [
+            'Content-Type' => 'application/json',
+            'ETag' => self::ETAG,
+            'Cache-Control' => 'private, max-age=60',
+        ]);
+
+        $result = $this->createService($this->clientReturning($response))->fetch(
+            self::ORGANIZATION_ID,
+            self::DOMAIN_ID,
+        );
+
+        $this->assertSame(200, $result->statusCode);
+        $this->assertSame($body, $result->body);
     }
 
     /**
@@ -410,82 +455,134 @@ final class WhiteLabelGatewayServiceTest extends TestCase
         ];
         yield 'wrong contract version' => [
             200,
-            '{"version":2,"organization":{"id":12,"name":"academy","title":"Academy","revision":1,"schemaVersion":1,"config":{}},"domain":{"id":34,"host":"ar.example.com","revision":1,"schemaVersion":1,"config":{}}}',
+            self::configurationJson('dev.xrugc.com', version: 2),
             $validSuccessHeaders,
         ];
         yield 'unexpected top-level namespace' => [
             200,
-            '{"version":1,"organization":{"id":12,"name":"academy","title":"Academy","revision":1,"schemaVersion":1,"config":{}},"domain":{"id":34,"host":"ar.example.com","revision":1,"schemaVersion":1,"config":{}},"debug":{}}',
+            self::configurationJson('dev.xrugc.com', topLevelOverrides: ['debug' => (object) []]),
             $validSuccessHeaders,
         ];
         yield 'organization id mismatch' => [
             200,
-            '{"version":1,"organization":{"id":13,"name":"academy","title":"Academy","revision":1,"schemaVersion":1,"config":{}},"domain":{"id":34,"host":"ar.example.com","revision":1,"schemaVersion":1,"config":{}}}',
+            self::configurationJson('dev.xrugc.com', organizationOverrides: ['id' => 13]),
             $validSuccessHeaders,
         ];
         yield 'domain id mismatch' => [
             200,
-            '{"version":1,"organization":{"id":12,"name":"academy","title":"Academy","revision":1,"schemaVersion":1,"config":{}},"domain":{"id":35,"host":"ar.example.com","revision":1,"schemaVersion":1,"config":{}}}',
+            self::configurationJson('dev.xrugc.com', domainOverrides: ['id' => 35]),
             $validSuccessHeaders,
         ];
         yield 'organization name is missing' => [
             200,
-            '{"version":1,"organization":{"id":12,"title":"Academy","revision":1,"schemaVersion":1,"config":{}},"domain":{"id":34,"host":"ar.example.com","revision":1,"schemaVersion":1,"config":{}}}',
+            self::configurationJson('dev.xrugc.com', removeOrganizationField: 'name'),
             $validSuccessHeaders,
         ];
         yield 'organization name is not a string' => [
             200,
-            '{"version":1,"organization":{"id":12,"name":12,"title":"Academy","revision":1,"schemaVersion":1,"config":{}},"domain":{"id":34,"host":"ar.example.com","revision":1,"schemaVersion":1,"config":{}}}',
+            self::configurationJson('dev.xrugc.com', organizationOverrides: ['name' => 12]),
             $validSuccessHeaders,
         ];
         yield 'organization name is empty' => [
             200,
-            '{"version":1,"organization":{"id":12,"name":"","title":"Academy","revision":1,"schemaVersion":1,"config":{}},"domain":{"id":34,"host":"ar.example.com","revision":1,"schemaVersion":1,"config":{}}}',
+            self::configurationJson('dev.xrugc.com', organizationOverrides: ['name' => '']),
             $validSuccessHeaders,
         ];
         yield 'organization title is missing' => [
             200,
-            '{"version":1,"organization":{"id":12,"name":"academy","revision":1,"schemaVersion":1,"config":{}},"domain":{"id":34,"host":"ar.example.com","revision":1,"schemaVersion":1,"config":{}}}',
+            self::configurationJson('dev.xrugc.com', removeOrganizationField: 'title'),
             $validSuccessHeaders,
         ];
         yield 'organization title is not a string' => [
             200,
-            '{"version":1,"organization":{"id":12,"name":"academy","title":[],"revision":1,"schemaVersion":1,"config":{}},"domain":{"id":34,"host":"ar.example.com","revision":1,"schemaVersion":1,"config":{}}}',
+            self::configurationJson('dev.xrugc.com', organizationOverrides: ['title' => []]),
             $validSuccessHeaders,
         ];
         yield 'organization title is empty' => [
             200,
-            '{"version":1,"organization":{"id":12,"name":"academy","title":"","revision":1,"schemaVersion":1,"config":{}},"domain":{"id":34,"host":"ar.example.com","revision":1,"schemaVersion":1,"config":{}}}',
+            self::configurationJson('dev.xrugc.com', organizationOverrides: ['title' => '']),
             $validSuccessHeaders,
         ];
-        yield 'domain host is missing' => [
+        yield 'domain config key is missing' => [
             200,
-            '{"version":1,"organization":{"id":12,"name":"academy","title":"Academy","revision":1,"schemaVersion":1,"config":{}},"domain":{"id":34,"revision":1,"schemaVersion":1,"config":{}}}',
+            self::configurationJson('dev.xrugc.com', removeDomainField: 'configKey'),
             $validSuccessHeaders,
         ];
-        yield 'domain host is not a string' => [
+        yield 'domain config key is not a string' => [
             200,
-            '{"version":1,"organization":{"id":12,"name":"academy","title":"Academy","revision":1,"schemaVersion":1,"config":{}},"domain":{"id":34,"host":34,"revision":1,"schemaVersion":1,"config":{}}}',
+            self::configurationJson('dev.xrugc.com', domainOverrides: ['configKey' => 34]),
             $validSuccessHeaders,
         ];
-        yield 'domain host is empty' => [
+        yield 'domain config key is empty' => [
             200,
-            '{"version":1,"organization":{"id":12,"name":"academy","title":"Academy","revision":1,"schemaVersion":1,"config":{}},"domain":{"id":34,"host":"","revision":1,"schemaVersion":1,"config":{}}}',
+            self::configurationJson('dev.xrugc.com', domainOverrides: ['configKey' => '']),
             $validSuccessHeaders,
         ];
         yield 'config must be object' => [
             200,
-            '{"version":1,"organization":{"id":12,"name":"academy","title":"Academy","revision":1,"schemaVersion":1,"config":[]},"domain":{"id":34,"host":"ar.example.com","revision":1,"schemaVersion":1,"config":{}}}',
+            self::configurationJson('dev.xrugc.com', organizationOverrides: ['config' => []]),
             $validSuccessHeaders,
         ];
         yield 'revision must be positive integer' => [
             200,
-            '{"version":1,"organization":{"id":12,"name":"academy","title":"Academy","revision":0,"schemaVersion":1,"config":{}},"domain":{"id":34,"host":"ar.example.com","revision":1,"schemaVersion":1,"config":{}}}',
+            self::configurationJson('dev.xrugc.com', organizationOverrides: ['revision' => 0]),
             $validSuccessHeaders,
         ];
         yield 'schema version must be positive integer' => [
             200,
-            '{"version":1,"organization":{"id":12,"name":"academy","title":"Academy","revision":1,"schemaVersion":1,"config":{}},"domain":{"id":34,"host":"ar.example.com","revision":1,"schemaVersion":"1","config":{}}}',
+            self::configurationJson('dev.xrugc.com', domainOverrides: ['schemaVersion' => '1']),
+            $validSuccessHeaders,
+        ];
+        yield 'domain config key does not match config name' => [
+            200,
+            self::configurationJson('xrugc.com', ['name' => 'dev.xrugc.com']),
+            $validSuccessHeaders,
+        ];
+        yield 'domain config key contains an empty label' => [
+            200,
+            self::configurationJson('dev..xrugc.com', ['name' => 'dev..xrugc.com']),
+            $validSuccessHeaders,
+        ];
+        yield 'domain config key contains a 64-character label' => [
+            200,
+            self::configurationJson(
+                str_repeat('a', 64) . '.xrugc.com',
+                ['name' => str_repeat('a', 64) . '.xrugc.com'],
+            ),
+            $validSuccessHeaders,
+        ];
+        yield 'domain config key exceeds 253 characters' => [
+            200,
+            self::configurationJson(
+                str_repeat('a', 63)
+                    . '.' . str_repeat('b', 63)
+                    . '.' . str_repeat('c', 63)
+                    . '.' . str_repeat('d', 62),
+            ),
+            $validSuccessHeaders,
+        ];
+        yield 'domain config omits a required field' => [
+            200,
+            self::configurationJson('dev.xrugc.com', removeField: 'configs'),
+            $validSuccessHeaders,
+        ];
+        yield 'domain config active flag is not boolean' => [
+            200,
+            self::configurationJson('dev.xrugc.com', ['is_active' => 'true']),
+            $validSuccessHeaders,
+        ];
+        yield 'localized domain config is not an object' => [
+            200,
+            self::configurationJson('dev.xrugc.com', ['configs' => ['zh-CN' => 'invalid']]),
+            $validSuccessHeaders,
+        ];
+        yield 'external fallback has no local Unity config data' => [
+            200,
+            self::configurationJson('dev.xrugc.com', [
+                'fallback_domain' => 'xrugc.com',
+                'default_config' => (object) [],
+                'configs' => (object) [],
+            ]),
             $validSuccessHeaders,
         ];
         yield 'empty success' => [
@@ -549,6 +646,62 @@ final class WhiteLabelGatewayServiceTest extends TestCase
             'http://plugin-whitelabel:3000',
             self::INTERNAL_TOKEN . "\r\nX-Evil: true",
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $domainConfigOverrides
+     */
+    private static function configurationJson(
+        string $configKey,
+        array $domainConfigOverrides = [],
+        ?string $removeField = null,
+        array $organizationOverrides = [],
+        ?string $removeOrganizationField = null,
+        array $domainOverrides = [],
+        ?string $removeDomainField = null,
+        int $version = 1,
+        array $topLevelOverrides = [],
+    ): string {
+        $domainConfig = array_replace([
+            'name' => $configKey,
+            'description' => 'XR UGC Dev',
+            'is_active' => true,
+            'fallback_domain' => null,
+            'default_config' => (object) [],
+            'configs' => ['zh-CN' => (object) []],
+        ], $domainConfigOverrides);
+        if ($removeField !== null) {
+            unset($domainConfig[$removeField]);
+        }
+
+        $organization = array_replace([
+            'id' => self::ORGANIZATION_ID,
+            'name' => 'academy',
+            'title' => 'Academy',
+            'revision' => 1,
+            'schemaVersion' => 1,
+            'config' => (object) [],
+        ], $organizationOverrides);
+        if ($removeOrganizationField !== null) {
+            unset($organization[$removeOrganizationField]);
+        }
+
+        $domain = array_replace([
+            'id' => self::DOMAIN_ID,
+            'configKey' => $configKey,
+            'revision' => 1,
+            'schemaVersion' => 1,
+            'config' => $domainConfig,
+        ], $domainOverrides);
+        if ($removeDomainField !== null) {
+            unset($domain[$removeDomainField]);
+        }
+
+        return json_encode(array_replace([
+            'version' => $version,
+            'organization' => $organization,
+            'domain' => $domain,
+        ], $topLevelOverrides), JSON_THROW_ON_ERROR);
     }
 
     private function createService(

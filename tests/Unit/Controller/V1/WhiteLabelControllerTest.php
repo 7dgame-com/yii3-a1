@@ -18,7 +18,7 @@ final class WhiteLabelControllerTest extends TestCase
     private const ORGANIZATION_ID = 12;
     private const DOMAIN_ID = 34;
     private const ETAG = '"wl-o12-d34-or4-dr7"';
-    private const CONFIG_JSON = '{"version":1,"organization":{"id":12,"name":"academy","title":"Academy","revision":4,"schemaVersion":1,"config":{"locale":"zh-CN"}},"domain":{"id":34,"host":"ar.example.com","revision":7,"schemaVersion":1,"config":{"primaryColor":"#2563EB"}}}';
+    private const CONFIG_JSON = '{"version":1,"organization":{"id":12,"name":"academy","title":"Academy","revision":4,"schemaVersion":1,"config":{"locale":"zh-CN"}},"domain":{"id":34,"configKey":"dev.xrugc.com","revision":7,"schemaVersion":1,"config":{"name":"dev.xrugc.com","description":"XR UGC Dev","is_active":true,"fallback_domain":null,"default_config":{"primaryColor":"#2563EB"},"configs":{"zh-CN":{}}}}}';
 
     public function testReturnsTwoConfigurationNamespacesAndAllowListedCacheHeaders(): void
     {

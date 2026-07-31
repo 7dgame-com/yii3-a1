@@ -464,11 +464,45 @@ final class SwaggerControllerTest extends TestCase
 
         $domain = $schema['properties']['domain'];
         $this->assertSame(
-            ['id', 'host', 'revision', 'schemaVersion', 'config'],
+            ['id', 'configKey', 'revision', 'schemaVersion', 'config'],
             $domain['required'],
         );
-        $this->assertSame('string', $domain['properties']['host']['type']);
-        $this->assertSame(1, $domain['properties']['host']['minLength']);
+        $this->assertSame('string', $domain['properties']['configKey']['type']);
+        $this->assertSame(1, $domain['properties']['configKey']['minLength']);
+        $this->assertSame(253, $domain['properties']['configKey']['maxLength']);
+        $this->assertSame(
+            '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$',
+            $domain['properties']['configKey']['pattern'],
+        );
+
+        $domainConfig = $domain['properties']['config'];
+        $this->assertSame(
+            [
+                'name',
+                'description',
+                'is_active',
+                'fallback_domain',
+                'default_config',
+                'configs',
+            ],
+            $domainConfig['required'],
+        );
+        $this->assertTrue($domainConfig['additionalProperties']);
+        $this->assertSame(
+            $domain['properties']['configKey']['pattern'],
+            $domainConfig['properties']['name']['pattern'],
+        );
+        $this->assertSame(253, $domainConfig['properties']['name']['maxLength']);
+        $this->assertSame('string', $domainConfig['properties']['description']['type']);
+        $this->assertSame('boolean', $domainConfig['properties']['is_active']['type']);
+        $this->assertTrue($domainConfig['properties']['fallback_domain']['nullable']);
+        $this->assertSame('object', $domainConfig['properties']['default_config']['type']);
+        $this->assertTrue($domainConfig['properties']['default_config']['additionalProperties']);
+        $this->assertSame('object', $domainConfig['properties']['configs']['type']);
+        $this->assertSame(
+            'object',
+            $domainConfig['properties']['configs']['additionalProperties']['type'],
+        );
 
         foreach (['200', '304'] as $statusCode) {
             $headers = $operation['responses'][$statusCode]['headers'];

@@ -138,16 +138,28 @@ Accept: application/json
   },
   "domain": {
     "id": 34,
-    "host": "ar.example.com",
+    "configKey": "dev.xrugc.com",
     "revision": 7,
     "schemaVersion": 1,
-    "config": {}
+    "config": {
+      "name": "dev.xrugc.com",
+      "description": "XR UGC Dev",
+      "is_active": true,
+      "fallback_domain": null,
+      "default_config": {},
+      "configs": {}
+    }
   }
 }
 ```
 
-`organization.name`、`organization.title` 和 `domain.host` 都是非空字符串，
-两侧的 `id`、`revision`、`schemaVersion` 与对象类型也会在 A1 信任边界校验。
+`domain.configKey` 是主前端静态域名配置键/域名族（例如 `dev.xrugc.com`），不是
+扫码时的精确请求 host；它必须等于 `domain.config.name`。`organization.name`、
+`organization.title`、域名配置固定结构、两侧的 `id`、`revision`、
+`schemaVersion` 与对象类型都会在 A1 信任边界校验。
+`domain.config.fallback_domain` 只作为格式兼容元数据透传；A1 不按它递归请求另一份
+配置。插件必须下发已经包含 Unity 所需有效内容的自包含快照，Unity 也不应把该字段
+当作新的网络地址。
 成功体最多 1 MiB；Guzzle 在收到响应头时就中止声明超限的 `Content-Length`，没有
 长度或长度不可信时，网关仍以 1 MiB + 1 字节的有界流读取执行最终上限。
 

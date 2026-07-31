@@ -438,9 +438,67 @@ final class WhiteLabelGatewayService implements WhiteLabelGatewayInterface
     private function isValidDomainNamespace(mixed $namespace, int $expectedId): bool
     {
         return $this->isValidConfigurationNamespace($namespace, $expectedId)
-            && isset($namespace->host)
-            && is_string($namespace->host)
-            && $namespace->host !== '';
+            && isset($namespace->configKey)
+            && is_string($namespace->configKey)
+            && $this->isValidDomainConfigKey($namespace->configKey)
+            && $this->isValidStaticDomainConfig($namespace->config, $namespace->configKey);
+    }
+
+    private function isValidDomainConfigKey(string $configKey): bool
+    {
+        return strlen($configKey) <= 253
+            && preg_match(
+                '/\A[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\z/D',
+                $configKey,
+            ) === 1;
+    }
+
+    private function isValidStaticDomainConfig(mixed $config, string $configKey): bool
+    {
+        if (
+            !$config instanceof \stdClass
+            || !isset(
+                $config->name,
+                $config->description,
+                $config->is_active,
+                $config->default_config,
+                $config->configs,
+            )
+            || !property_exists($config, 'fallback_domain')
+            || !is_string($config->name)
+            || $config->name !== $configKey
+            || !is_string($config->description)
+            || !is_bool($config->is_active)
+            || !($config->fallback_domain === null || (
+                is_string($config->fallback_domain)
+                && $this->isValidDomainConfigKey($config->fallback_domain)
+            ))
+            || !$config->default_config instanceof \stdClass
+            || !$config->configs instanceof \stdClass
+        ) {
+            return false;
+        }
+
+        $hasLocalizedConfig = false;
+        foreach (get_object_vars($config->configs) as $localizedConfig) {
+            if (!$localizedConfig instanceof \stdClass) {
+                return false;
+            }
+            if (get_object_vars($localizedConfig) !== []) {
+                $hasLocalizedConfig = true;
+            }
+        }
+
+        if (
+            $config->fallback_domain !== null
+            && $config->fallback_domain !== $configKey
+            && get_object_vars($config->default_config) === []
+            && !$hasLocalizedConfig
+        ) {
+            return false;
+        }
+
+        return true;
     }
 
     private function isValidConfigurationNamespace(mixed $namespace, int $expectedId): bool
