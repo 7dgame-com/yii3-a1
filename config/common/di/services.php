@@ -10,10 +10,15 @@ use App\Service\PhototypeQueryService;
 use App\Service\RefreshTokenService;
 use App\Service\SnapshotDiagnosticsService;
 use App\Service\SnapshotQueryService;
+use App\Service\WhiteLabelGatewayInterface;
+use App\Service\WhiteLabelGatewayService;
 use App\Service\Yii2RestResponseFactory;
 use Predis\Client as RedisClient;
+use Psr\Http\Client\ClientInterface;
+use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
+use Psr\Log\LoggerInterface;
 use Yiisoft\Cache\CacheInterface as YiiCacheInterface;
 use Yiisoft\Db\Connection\ConnectionInterface;
 
@@ -51,6 +56,16 @@ return [
     ],
     PhototypeQueryService::class => [
         'class' => PhototypeQueryService::class,
+    ],
+    WhiteLabelGatewayInterface::class => [
+        'class' => WhiteLabelGatewayService::class,
+        '__construct()' => [
+            'httpClient' => \Yiisoft\Definitions\Reference::to(ClientInterface::class),
+            'requestFactory' => \Yiisoft\Definitions\Reference::to(RequestFactoryInterface::class),
+            'logger' => \Yiisoft\Definitions\Reference::to(LoggerInterface::class),
+            'serviceUrl' => $params['whiteLabel']['serviceUrl'],
+            'internalToken' => $params['whiteLabel']['internalToken'],
+        ],
     ],
     Yii2RestResponseFactory::class => [
         'class' => Yii2RestResponseFactory::class,

@@ -45,6 +45,13 @@ return [
         'ttl' => 10800, // 3 hours in seconds
     ],
 
+    // White-label plugin internal gateway configuration. These values are
+    // trusted deployment configuration and are never derived from a request.
+    'whiteLabel' => [
+        'serviceUrl' => $_ENV['WHITELABEL_SERVICE_URL'] ?? '',
+        'internalToken' => $_ENV['WHITELABEL_INTERNAL_TOKEN'] ?? '',
+    ],
+
     // Cache configuration
     'cache' => [
         'defaultTtl' => 30, // 30 seconds for snapshot queries

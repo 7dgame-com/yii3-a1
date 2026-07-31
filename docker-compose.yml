@@ -6,6 +6,8 @@ services:
     volumes:
       - .:/app
       - vendor:/app/vendor
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       MYSQL_HOST: mysql
       MYSQL_DB: mrpp
@@ -15,6 +17,8 @@ services:
       REDIS_PORT: "6379"
       REDIS_DB: "0"
       JWT_KEY: /app/runtime/jwt.key
+      WHITELABEL_SERVICE_URL: ${WHITELABEL_SERVICE_URL:-}
+      WHITELABEL_INTERNAL_TOKEN: ${WHITELABEL_INTERNAL_TOKEN:-}
       YII_DEBUG: "true"
       YII_ENV: dev
     depends_on:

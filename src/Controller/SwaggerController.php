@@ -27,6 +27,7 @@ use Psr\Http\Message\StreamFactoryInterface;
 )]
 #[OA\Tag(name: 'Authentication', description: 'Authentication')]
 #[OA\Tag(name: 'V1 Server', description: 'Yii2-compatible V1 server endpoints')]
+#[OA\Tag(name: 'White Label', description: 'Unity white-label configuration gateway')]
 #[OA\Tag(name: 'V2', description: 'V2 snapshot, tag, and system endpoints')]
 #[OA\Tag(name: 'System', description: 'Service health and status endpoints')]
 #[OA\Tag(name: 'Documentation', description: 'Documentation')]
