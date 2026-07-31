@@ -52,6 +52,13 @@ return [
         'internalToken' => $_ENV['WHITELABEL_INTERNAL_TOKEN'] ?? '',
     ],
 
+    // Routes change with application releases while Redis survives container
+    // replacement. Disable FastRoute's persistent cache so a deployment can
+    // never keep dispatching with the previous release's route table.
+    'yiisoft/router-fastroute' => [
+        'enableCache' => false,
+    ],
+
     // Cache configuration
     'cache' => [
         'defaultTtl' => 30, // 30 seconds for snapshot queries
