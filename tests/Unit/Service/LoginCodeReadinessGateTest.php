@@ -34,6 +34,28 @@ final class LoginCodeReadinessGateTest extends TestCase
         $this->assertSame(0, $redis->timeCalls);
     }
 
+    public function testDatabaseReadDualWriteRequiresRedisReadiness(): void
+    {
+        $redis = new ControlledLoginCodeRedisClient(null, -2, $this->currentRedisTime());
+        $db = $this->createMock(ConnectionInterface::class);
+        $db->expects($this->never())->method('createCommand');
+
+        $result = (new LoginCodeReadinessGate(
+            $redis,
+            $db,
+            new LoginCodeSettings(
+                readMode: LoginCodeSettings::READ_DATABASE,
+                writeMode: LoginCodeSettings::WRITE_DUAL,
+            ),
+            7,
+        ))->check();
+
+        $this->assertTrue($result->required);
+        $this->assertTrue($result->ready);
+        $this->assertSame(LoginCodeReadinessResult::READY, $result->reason);
+        $this->assertSame(1, $redis->timeCalls);
+    }
+
     public function testRedisModeIsReadyWhenRedisAndAppClocksAreWithinOneSecond(): void
     {
         $redis = new ControlledLoginCodeRedisClient(null, -2, $this->currentRedisTime());

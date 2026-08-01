@@ -9,9 +9,10 @@ use Yiisoft\Db\Connection\ConnectionInterface;
 /**
  * Verifies the time sources that make Redis login-code authorization safe.
  *
- * It is deliberately inactive for the legacy database read path. Redis-backed
- * read modes require app↔Redis skew <= 1 second; redis-first additionally
- * requires MySQL UTC↔Redis skew <= 1 second before legacy fallback is allowed.
+ * It is deliberately inactive only when neither reads nor writes use Redis.
+ * Redis-backed read/write modes require app↔Redis skew <= 1 second;
+ * redis-first additionally requires MySQL UTC↔Redis skew <= 1 second before
+ * legacy fallback is allowed.
  */
 final class LoginCodeReadinessGate implements LoginCodeReadiness
 {
@@ -36,7 +37,7 @@ final class LoginCodeReadinessGate implements LoginCodeReadiness
 
     public function check(): LoginCodeReadinessResult
     {
-        if ($this->settings->isDatabaseRead()) {
+        if (!$this->settings->usesRedis()) {
             return LoginCodeReadinessResult::skipped();
         }
 
