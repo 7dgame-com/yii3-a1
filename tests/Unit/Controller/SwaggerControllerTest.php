@@ -405,7 +405,6 @@ final class SwaggerControllerTest extends TestCase
         $this->assertContains('/v1/server/group', $paths);
         $this->assertContains('/v1/server/tags', $paths);
         $this->assertContains('/v1/server/snapshot', $paths);
-        $this->assertContains('/v1/white-label-configs', $paths);
         $this->assertContains('/v2/snapshots', $paths);
         $this->assertContains('/v2/snapshots/{id}', $paths);
         $this->assertContains('/v2/tags', $paths);
@@ -413,109 +412,6 @@ final class SwaggerControllerTest extends TestCase
         $this->assertContains('/health', $paths);
         $this->assertContains('/swagger', $paths);
         $this->assertContains('/swagger/json-schema', $paths);
-    }
-
-    public function testJsonSchemaDocumentsWhiteLabelDualIdContract(): void
-    {
-        $controller = new SwaggerController(
-            $this->responseFactory,
-            $this->streamFactory,
-            'admin',
-            'secret',
-        );
-
-        $capturedBody = null;
-        $capturedStatusCode = null;
-        $capturedHeaders = [];
-        $this->setupResponseCaptureWithBody($capturedBody, $capturedStatusCode, $capturedHeaders);
-
-        $controller->jsonSchema(
-            $this->createRequestWithAuth('Basic ' . base64_encode('admin:secret')),
-        );
-
-        $decoded = json_decode((string) $capturedBody, true, flags: JSON_THROW_ON_ERROR);
-        $operation = $decoded['paths']['/v1/white-label-configs']['get'];
-        $parameters = [];
-        foreach ($operation['parameters'] as $parameter) {
-            $parameters[$parameter['name']] = $parameter;
-        }
-
-        foreach (['o', 'd'] as $name) {
-            $this->assertSame('query', $parameters[$name]['in']);
-            $this->assertTrue($parameters[$name]['required']);
-            $this->assertSame('integer', $parameters[$name]['schema']['type']);
-            $this->assertSame(1, $parameters[$name]['schema']['minimum']);
-            $this->assertSame(9_007_199_254_740_991, $parameters[$name]['schema']['maximum']);
-        }
-
-        $schema = $operation['responses']['200']['content']['application/json']['schema'];
-        $this->assertSame(['version', 'organization', 'domain'], $schema['required']);
-        $this->assertFalse($schema['additionalProperties']);
-
-        $organization = $schema['properties']['organization'];
-        $this->assertSame(
-            ['id', 'name', 'title', 'revision', 'schemaVersion', 'config'],
-            $organization['required'],
-        );
-        $this->assertSame('string', $organization['properties']['name']['type']);
-        $this->assertSame(1, $organization['properties']['name']['minLength']);
-        $this->assertSame('string', $organization['properties']['title']['type']);
-        $this->assertSame(1, $organization['properties']['title']['minLength']);
-
-        $domain = $schema['properties']['domain'];
-        $this->assertSame(
-            ['id', 'configKey', 'revision', 'schemaVersion', 'config'],
-            $domain['required'],
-        );
-        $this->assertSame('string', $domain['properties']['configKey']['type']);
-        $this->assertSame(1, $domain['properties']['configKey']['minLength']);
-        $this->assertSame(253, $domain['properties']['configKey']['maxLength']);
-        $this->assertSame(
-            '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$',
-            $domain['properties']['configKey']['pattern'],
-        );
-
-        $domainConfig = $domain['properties']['config'];
-        $this->assertSame(
-            [
-                'name',
-                'description',
-                'is_active',
-                'fallback_domain',
-                'default_config',
-                'configs',
-            ],
-            $domainConfig['required'],
-        );
-        $this->assertTrue($domainConfig['additionalProperties']);
-        $this->assertSame(
-            $domain['properties']['configKey']['pattern'],
-            $domainConfig['properties']['name']['pattern'],
-        );
-        $this->assertSame(253, $domainConfig['properties']['name']['maxLength']);
-        $this->assertSame('string', $domainConfig['properties']['description']['type']);
-        $this->assertSame('boolean', $domainConfig['properties']['is_active']['type']);
-        $this->assertTrue($domainConfig['properties']['fallback_domain']['nullable']);
-        $this->assertSame('object', $domainConfig['properties']['default_config']['type']);
-        $this->assertTrue($domainConfig['properties']['default_config']['additionalProperties']);
-        $this->assertSame('object', $domainConfig['properties']['configs']['type']);
-        $this->assertSame(
-            'object',
-            $domainConfig['properties']['configs']['additionalProperties']['type'],
-        );
-
-        foreach (['200', '304'] as $statusCode) {
-            $headers = $operation['responses'][$statusCode]['headers'];
-            $this->assertTrue($headers['ETag']['required']);
-            $this->assertSame('string', $headers['ETag']['schema']['type']);
-            $this->assertSame(256, $headers['ETag']['schema']['maxLength']);
-            $this->assertArrayHasKey('pattern', $headers['ETag']['schema']);
-            $this->assertTrue($headers['Cache-Control']['required']);
-            $this->assertSame('string', $headers['Cache-Control']['schema']['type']);
-            $this->assertSame(1, $headers['Cache-Control']['schema']['minLength']);
-            $this->assertSame(512, $headers['Cache-Control']['schema']['maxLength']);
-            $this->assertArrayHasKey('pattern', $headers['Cache-Control']['schema']);
-        }
     }
 
     /**

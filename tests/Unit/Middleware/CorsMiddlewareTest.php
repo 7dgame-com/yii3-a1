@@ -151,9 +151,6 @@ final class CorsMiddlewareTest extends TestCase
 
         $this->assertArrayHasKey('Access-Control-Allow-Headers', $headerCalls);
         $this->assertSame('*', $headerCalls['Access-Control-Allow-Headers']);
-
-        $this->assertArrayHasKey('Access-Control-Expose-Headers', $headerCalls);
-        $this->assertStringContainsString('ETag', $headerCalls['Access-Control-Expose-Headers']);
     }
 
     /**

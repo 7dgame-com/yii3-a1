@@ -29,11 +29,6 @@ docker compose up --build
 
 服务启动后访问 `http://localhost:8080`。
 
-`.env.example` 默认通过 `http://host.docker.internal:8093` 访问宿主机上运行的白牌
-插件；Compose 为 Linux Docker 显式配置了 `host-gateway`。生产环境不要沿用该地址，
-应将 `WHITELABEL_SERVICE_URL` 设置为 A1 容器可解析的内部服务 DNS，并把 A1 与白牌
-插件接入受控的共享容器网络。
-
 ### 本地开发
 
 ```bash
@@ -49,13 +44,6 @@ mysql -u root mrpp < docker/init.sql
 php -S 0.0.0.0:8080 -t public
 ```
 
-### 生产运行说明
-
-仓库中的 `php -S` 仅用于本地开发，它是单 worker 服务，不承担生产并发与抗滥用
-能力。生产应使用多 worker PHP-FPM（或等价应用服务器）并置于反向代理之后；反向
-代理需对公开白牌查询接口配置限流、请求体/响应体上限和短连接超时，A1 到插件的
-上游连接也应保持短超时。
-
 ## 环境变量
 
 | 变量 | 说明 | 默认值 |
@@ -68,14 +56,6 @@ php -S 0.0.0.0:8080 -t public
 | `REDIS_PORT` | Redis 端口 | `6379` |
 | `REDIS_DB` | Redis 数据库编号 | `0` |
 | `JWT_KEY` | JWT 密钥文件路径 | - |
-| `WHITELABEL_SERVICE_URL` | 白牌插件后端的固定内部地址 | 本地 Docker：`http://host.docker.internal:8093` |
-| `WHITELABEL_INTERNAL_TOKEN` | A1 与白牌插件共享的内部鉴权令牌（至少 32 字符） | - |
-
-`WHITELABEL_SERVICE_URL` 必须是部署时提供的固定 `http` 或 `https` 地址，
-不能包含用户信息、查询串或 fragment。服务不会使用客户端请求中的 host 或 URL
-构造上游地址，也不会跟随重定向。内部令牌去除首尾空白后必须至少 32 字符，且不能
-包含控制字符。两个白牌变量缺失或无效时，公开接口安全地返回 `503 Service
-Unavailable`。
 
 ## API 端点
 
@@ -98,89 +78,6 @@ Unavailable`。
 | GET | `/v1/server/group` | 是 | 当前用户群组场景 |
 | GET | `/v1/server/tags` | 否 | 标签列表 |
 | GET | `/v1/server/snapshot` | 否 | 快照详情（?id= 或 ?verse_id=） |
-
-### 白牌配置 (V1)
-
-| 方法 | 路径 | 认证 | 说明 |
-|------|------|------|------|
-| GET | `/v1/white-label-configs?o={organizationId}&d={domainId}` | 否 | 获取一对已启用的组织级与域名级 Unity 白牌配置 |
-
-`o` 和 `d` 都必须是无前导零、且不超过 JavaScript 最大安全整数的正十进制整数；
-缺失或格式错误返回 `400 Bad Request`。二维码内容就是完整的生产 HTTPS URL，例如：
-
-```text
-https://a1.example.com/v1/white-label-configs?o=12&d=34
-```
-
-Unity 应只接受 `https` 且 host 位于应用内置 A1 allowlist 的二维码 URL，避免二维码
-把客户端导向任意服务。A1 自身仍只使用部署配置中的固定插件内部地址。
-
-A1 使用固定内部地址调用白牌插件：
-
-```http
-GET /internal/v1/white-label-configs/resolve?o=12&d=34
-X-Internal-Token: <WHITELABEL_INTERNAL_TOKEN>
-Accept: application/json
-```
-
-成功体固定为三个顶层命名空间，组织和域名配置彼此独立：
-
-```json
-{
-  "version": 1,
-  "organization": {
-    "id": 12,
-    "name": "academy",
-    "title": "Academy",
-    "revision": 4,
-    "schemaVersion": 1,
-    "config": {}
-  },
-  "domain": {
-    "id": 34,
-    "configKey": "dev.xrugc.com",
-    "revision": 7,
-    "schemaVersion": 1,
-    "config": {
-      "name": "dev.xrugc.com",
-      "description": "XR UGC Dev",
-      "is_active": true,
-      "fallback_domain": null,
-      "default_config": {},
-      "configs": {}
-    }
-  }
-}
-```
-
-`domain.configKey` 是主前端静态域名配置键/域名族（例如 `dev.xrugc.com`），不是
-扫码时的精确请求 host；它必须等于 `domain.config.name`。`organization.name`、
-`organization.title`、域名配置固定结构、两侧的 `id`、`revision`、
-`schemaVersion` 与对象类型都会在 A1 信任边界校验。
-`domain.config.fallback_domain` 只作为格式兼容元数据透传；A1 不按它递归请求另一份
-配置。插件必须下发已经包含 Unity 所需有效内容的自包含快照，Unity 也不应把该字段
-当作新的网络地址。
-成功体最多 1 MiB；Guzzle 在收到响应头时就中止声明超限的 `Content-Length`，没有
-长度或长度不可信时，网关仍以 1 MiB + 1 字节的有界流读取执行最终上限。
-
-`200` 与 `304` 都返回语法有效的 `ETag` 和安全的 `Cache-Control`：
-
-```http
-ETag: "wl-o12-r4-d34-r7-a2"
-Cache-Control: private, max-age=60
-```
-
-客户端传入的合法 `If-None-Match` 会转发给插件。成功响应的 JSON、`ETag` 和
-`Cache-Control` 会按白名单原样返回；浏览器可通过全局 CORS 的
-`Access-Control-Expose-Headers` 读取 `ETag`。JSON 以 `organization` 与 `domain`
-两个独立命名空间承载组织级和域名级配置。只有上游 `304` 的 ETag 与客户端条件头
-弱匹配时才返回 `304`。
-
-任一配置不存在、已停用或两个 ID 不是有效组合时，插件使用 JSON
-`error.code=NOT_FOUND`，A1 才统一返回 `404`。伪 404、缺失或畸形缓存头、上游超时、
-鉴权失败、非 JSON 响应和其他协议异常统一返回 `503`。
-A1 不会转发客户端的 `Authorization` 或其他请求头，白牌 JSON 中也不得存放密钥
-或令牌。
 
 ### 快照服务 (V2)
 

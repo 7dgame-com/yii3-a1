@@ -52,8 +52,8 @@ final class RoutesTest extends TestCase
 
     public function testTotalRouteCount(): void
     {
-        // 3 auth + 7 server + 1 phototype + 1 white-label + 4 v2 + 1 health + 2 swagger = 19
-        $this->assertCount(19, $this->routes);
+        // 3 auth + 7 server + 1 phototype + 4 v2 + 1 health + 2 swagger = 18
+        $this->assertCount(18, $this->routes);
     }
 
     // =========================================================================
@@ -156,14 +156,6 @@ final class RoutesTest extends TestCase
         $this->assertSame(['GET'], $route->getData('methods'));
     }
 
-    public function testV1WhiteLabelViewRoute(): void
-    {
-        $route = $this->findRouteByName('v1.white-label-configs.resolve');
-        $this->assertNotNull($route, 'Route v1.white-label-configs.resolve should exist');
-        $this->assertSame('/v1/white-label-configs', $route->getData('pattern'));
-        $this->assertSame(['GET'], $route->getData('methods'));
-    }
-
     // =========================================================================
     // V2 Routes
     // =========================================================================
@@ -252,7 +244,6 @@ final class RoutesTest extends TestCase
             'v1.server.tags',
             'v1.server.snapshot',
             'v1.phototype.info',
-            'v1.white-label-configs.resolve',
             'v2.snapshots.view',
             'v2.tags.index',
             'v2.system.index',
@@ -315,7 +306,6 @@ final class RoutesTest extends TestCase
             '/v1/server/tags',
             '/v1/server/snapshot',
             '/v1/phototype/info',
-            '/v1/white-label-configs',
             '/v2/snapshots',
             '/v2/snapshots/{id:\d+}',
             '/v2/tags',

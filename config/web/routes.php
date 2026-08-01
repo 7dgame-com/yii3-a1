@@ -7,7 +7,6 @@ use App\Controller\SwaggerController;
 use App\Controller\V1\AuthController;
 use App\Controller\V1\PhototypeController;
 use App\Controller\V1\ServerController;
-use App\Controller\V1\WhiteLabelController;
 use App\Controller\V2\SnapshotController;
 use App\Controller\V2\SystemController;
 use App\Controller\V2\TagController;
@@ -75,13 +74,6 @@ return [
     Route::get('/v1/phototype/info')
         ->action([PhototypeController::class, 'info'])
         ->name('v1.phototype.info'),
-
-    // =========================================================================
-    // V1 White-label Gateway
-    // =========================================================================
-    Route::get('/v1/white-label-configs')
-        ->action([WhiteLabelController::class, 'resolve'])
-        ->name('v1.white-label-configs.resolve'),
 
     // =========================================================================
     // V2 Routes

@@ -21,7 +21,7 @@ final class CorsMiddleware implements MiddlewareInterface
     private const ALLOWED_ORIGIN = '*';
     private const ALLOWED_METHODS = 'GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS';
     private const ALLOWED_HEADERS = '*';
-    private const EXPOSE_HEADERS = 'X-Pagination-Total-Count, X-Pagination-Page-Count, X-Pagination-Current-Page, X-Pagination-Per-Page, ETag';
+    private const EXPOSE_HEADERS = 'X-Pagination-Total-Count, X-Pagination-Page-Count, X-Pagination-Current-Page, X-Pagination-Per-Page';
     private const MAX_AGE = '86400';
 
     public function __construct(
