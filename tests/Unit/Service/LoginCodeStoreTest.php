@@ -228,10 +228,10 @@ final class LoginCodeStoreTest extends TestCase
             ->willReturn($command);
         ConnectionProvider::set($connection);
 
-        $result = new LoginCodeStore(
+        $result = (new LoginCodeStore(
             new ControlledLoginCodeRedisClient(null, -2, [self::REDIS_NOW, 0]),
             new LoginCodeSettings(),
-        )->resolve($storedDigest);
+        ))->resolve($storedDigest);
 
         $this->assertSame(LoginCodeLookupStatus::MISS, $result->status);
         $this->assertSame([':loginCodeKey' => hash('sha256', $storedDigest)], $boundParameters);
