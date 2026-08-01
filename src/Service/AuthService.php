@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Service;
 
 use App\Model\User;
-use App\Model\UserLinked;
 use RuntimeException;
 use Yiisoft\ActiveRecord\ActiveQuery;
 
@@ -15,7 +14,7 @@ use Yiisoft\ActiveRecord\ActiveQuery;
  * Coordinates JwtService and RefreshTokenService to provide:
  * - login: validate credentials and generate token pair
  * - refresh: rotate refresh tokens and generate new token pair
- * - keyToToken: authenticate via UserLinked key and generate token pair
+ * - keyToToken: authenticate via a short-lived login code and generate token pair
  *
  * @see Requirements 3.1, 3.2, 3.5
  */
@@ -24,6 +23,7 @@ final class AuthService
     public function __construct(
         private JwtService $jwtService,
         private RefreshTokenService $refreshTokenService,
+        private LoginCodeStore $loginCodeStore,
     ) {
     }
 
@@ -82,12 +82,15 @@ final class AuthService
         $normalizedToken = $this->normalizeRefreshTokenInput($refreshToken);
         $userId = $this->refreshTokenService->validate($normalizedToken);
         $deleteConsumedRefreshToken = true;
-        $linked = null;
 
         if ($userId === null) {
-            $linked = $this->findLinkedLoginCode($normalizedToken);
-            if ($linked !== null) {
-                $userId = (int) $linked->get('user_id');
+            $loginCode = $this->loginCodeStore->resolve($normalizedToken);
+            if ($loginCode->isInfrastructureFailure()) {
+                throw new RuntimeException('Login code storage is unavailable.', 503);
+            }
+
+            if ($loginCode->status === LoginCodeLookupStatus::HIT) {
+                $userId = $loginCode->userId;
                 $deleteConsumedRefreshToken = false;
             }
         }
@@ -118,10 +121,10 @@ final class AuthService
     }
 
     /**
-     * Authenticate via a UserLinked key.
+     * Authenticate via a reusable QR login code.
      *
-     * Finds the UserLinked record by key, retrieves the associated user,
-     * and generates an accessToken + refreshToken pair.
+     * Resolves the configured database/Redis login-code source, retrieves the
+     * associated user, and generates an accessToken + refreshToken pair.
      *
      * @param string $key The linked key to authenticate with.
      * @return array{accessToken: string, refreshToken: string} The generated token pair.
@@ -131,13 +134,17 @@ final class AuthService
      */
     public function keyToToken(string $key): array
     {
-        $userLinked = $this->findLinkedLoginCode($this->normalizeRefreshTokenInput($key));
+        $loginCode = $this->loginCodeStore->resolveForKeyToToken($this->normalizeRefreshTokenInput($key));
 
-        if ($userLinked === null) {
+        if ($loginCode->isInfrastructureFailure()) {
+            throw new RuntimeException('Login code storage is unavailable.', 503);
+        }
+
+        if ($loginCode->status !== LoginCodeLookupStatus::HIT || $loginCode->userId === null) {
             throw new RuntimeException('Linked key is invalid.', 400);
         }
 
-        $userId = (int) $userLinked->get('user_id');
+        $userId = $loginCode->userId;
 
         if ($userId <= 0) {
             throw new RuntimeException('User is not found.', 400);
@@ -175,29 +182,6 @@ final class AuthService
         }
 
         return $token;
-    }
-
-    private function findLinkedLoginCode(string $loginCode): ?UserLinked
-    {
-        if (strlen($loginCode) < 32) {
-            return null;
-        }
-
-        $lookupKeys = [$loginCode];
-        $hashedLoginCode = hash('sha256', $loginCode);
-        if (!hash_equals($loginCode, $hashedLoginCode)) {
-            $lookupKeys[] = $hashedLoginCode;
-        }
-
-        $linked = (new ActiveQuery(UserLinked::class))
-            ->where(['key' => $lookupKeys])
-            ->one();
-
-        if (!$linked instanceof UserLinked || $linked->isLoginCodeExpired()) {
-            return null;
-        }
-
-        return $linked;
     }
 
     /**

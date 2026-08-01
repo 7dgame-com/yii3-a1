@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Service;
 
 use App\Service\RefreshTokenService;
+use App\Tests\Support\RedisTestClientFactory;
 use PHPUnit\Framework\TestCase;
 use Predis\Client as RedisClient;
 
@@ -25,16 +26,7 @@ final class RefreshTokenServiceTest extends TestCase
 
     protected function setUp(): void
     {
-        $redisHost = getenv('REDIS_HOST') ?: '127.0.0.1';
-        $redisPort = (int) (getenv('REDIS_PORT') ?: 6379);
-        $redisDb = (int) (getenv('REDIS_DB') ?: 1);
-
-        $this->redis = new RedisClient([
-            'scheme' => 'tcp',
-            'host' => $redisHost,
-            'port' => $redisPort,
-            'database' => $redisDb,
-        ]);
+        $this->redis = RedisTestClientFactory::create();
 
         // Clean up any leftover test keys
         $this->cleanupTestKeys();

@@ -6,6 +6,9 @@ namespace App\Tests\Unit\Service;
 
 use App\Service\HealthCheckService;
 use App\Service\HealthResult;
+use App\Service\LoginCodeReadinessResult;
+use App\Service\LoginCodeSettings;
+use App\Tests\Support\StaticLoginCodeReadiness;
 use PHPUnit\Framework\TestCase;
 use Predis\Client as RedisClient;
 use Yiisoft\Db\Command\CommandInterface;
@@ -194,6 +197,95 @@ final class HealthCheckServiceTest extends TestCase
 
         $this->assertSame('down', $result->services['redis']['status']);
         $this->assertSame('Redis connection lost', $result->services['redis']['error']);
+    }
+
+    /**
+     * A required Redis login-code readiness failure must make /health return
+     * 503 through HealthController, without exposing underlying exceptions.
+     */
+    public function testCheckReturnsUnhealthyWhenLoginCodeReadinessFails(): void
+    {
+        $service = new HealthCheckService(
+            $this->createHealthyDbMock(),
+            $this->createHealthyRedisMock(),
+            new StaticLoginCodeReadiness(
+                LoginCodeReadinessResult::failed(LoginCodeReadinessResult::APP_CLOCK_SKEW),
+            ),
+        );
+
+        $result = $service->check();
+
+        $this->assertSame('unhealthy', $result->status);
+        $this->assertFalse($result->isHealthy());
+        $this->assertSame([
+            'status' => 'down',
+            'required' => true,
+            'reason' => LoginCodeReadinessResult::APP_CLOCK_SKEW,
+        ], $result->services['login_code']);
+        $this->assertArrayNotHasKey('error', $result->services['login_code']);
+    }
+
+    public function testSkippedLoginCodeReadinessLeavesDatabaseModeHealthContractUnchanged(): void
+    {
+        $readiness = new StaticLoginCodeReadiness(LoginCodeReadinessResult::skipped());
+        $service = new HealthCheckService(
+            $this->createHealthyDbMock(),
+            $this->createHealthyRedisMock(),
+            $readiness,
+        );
+
+        $result = $service->check();
+
+        $this->assertSame('healthy', $result->status);
+        $this->assertArrayNotHasKey('login_code', $result->services);
+        $this->assertSame(1, $readiness->checks);
+    }
+
+    public function testReadinessExceptionBecomesRedactedUnhealthyHealthResult(): void
+    {
+        $service = new HealthCheckService(
+            $this->createHealthyDbMock(),
+            $this->createHealthyRedisMock(),
+            new class implements \App\Service\LoginCodeReadiness {
+                public function check(): LoginCodeReadinessResult
+                {
+                    throw new \RuntimeException('Redis auth:login-code:v1:code:sensitive-digest failed');
+                }
+            },
+        );
+
+        $result = $service->check();
+        $serialized = json_encode($result->toArray(), JSON_THROW_ON_ERROR);
+
+        $this->assertSame('unhealthy', $result->status);
+        $this->assertSame(LoginCodeReadinessResult::READINESS_UNAVAILABLE, $result->services['login_code']['reason']);
+        $this->assertStringNotContainsString('sensitive-digest', $serialized);
+    }
+
+    public function testReadyLoginCodeHealthIncludesOnlySafeProtocolMetadata(): void
+    {
+        $service = new HealthCheckService(
+            $this->createHealthyDbMock(),
+            $this->createHealthyRedisMock(),
+            StaticLoginCodeReadiness::ready(redisDatabase: 7, issueLimit: 6),
+        );
+
+        $result = $service->check();
+
+        $this->assertSame('healthy', $result->status);
+        $this->assertSame([
+            'status' => 'up',
+            'required' => true,
+            'protocol' => 'login-code-v1',
+            'protocol_fingerprint' => LoginCodeSettings::defaultProtocolFingerprint(),
+            'redis_database' => 7,
+            'active_window_seconds' => 60,
+            'record_retention_seconds' => 300,
+            'issue_window_seconds' => 60,
+            'issue_limit' => 6,
+            'limiter' => 'redis-zset-sliding-window',
+            'clock_sync' => 'within_1s',
+        ], $result->services['login_code']);
     }
 
     // ---------------------------------------------------------------

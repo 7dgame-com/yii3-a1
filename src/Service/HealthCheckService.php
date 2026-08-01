@@ -23,6 +23,7 @@ final class HealthCheckService
     public function __construct(
         private ConnectionInterface $db,
         private RedisClient $redis,
+        private readonly ?LoginCodeReadiness $loginCodeReadiness = null,
     ) {
     }
 
@@ -38,17 +39,45 @@ final class HealthCheckService
     {
         $mysqlResult = $this->checkMysql();
         $redisResult = $this->checkRedis();
+        $loginCodeReadiness = $this->checkLoginCodeReadiness();
 
-        $allHealthy = $mysqlResult['status'] === 'up' && $redisResult['status'] === 'up';
+        $allHealthy = $mysqlResult['status'] === 'up'
+            && $redisResult['status'] === 'up'
+            && ($loginCodeReadiness === null || !$loginCodeReadiness->required || $loginCodeReadiness->ready);
+
+        $services = [
+            'database' => $mysqlResult,
+            'redis' => $redisResult,
+        ];
+
+        // Database-mode rollout must preserve the existing health contract and
+        // never call Redis TIME through this path. Redis modes expose only a
+        // fixed, redacted status/reason vocabulary.
+        if ($loginCodeReadiness?->required) {
+            $services['login_code'] = $loginCodeReadiness->toHealthDetail();
+        }
 
         return new HealthResult(
             status: $allHealthy ? 'healthy' : 'unhealthy',
-            services: [
-                'database' => $mysqlResult,
-                'redis' => $redisResult,
-            ],
+            services: $services,
             timestamp: date('c'),
         );
+    }
+
+    private function checkLoginCodeReadiness(): ?LoginCodeReadinessResult
+    {
+        if ($this->loginCodeReadiness === null) {
+            return null;
+        }
+
+        try {
+            return $this->loginCodeReadiness->check();
+        } catch (\Throwable) {
+            // A readiness implementation must never turn /health into a 500
+            // or disclose a Redis/DB exception. The fixed reason is safe for
+            // the public health response and makes the endpoint return 503.
+            return LoginCodeReadinessResult::failed(LoginCodeReadinessResult::READINESS_UNAVAILABLE);
+        }
     }
 
     /**
@@ -71,14 +100,6 @@ final class HealthCheckService
             return [
                 'status' => 'up',
                 'responseTime' => (int) round($elapsed),
-            ];
-        } catch (\Throwable $e) {
-            $elapsed = (hrtime(true) - $start) / 1_000_000;
-
-            return [
-                'status' => 'down',
-                'responseTime' => (int) round($elapsed),
-                'error' => $e->getMessage(),
             ];
         } catch (\Throwable $e) {
             $elapsed = (hrtime(true) - $start) / 1_000_000;

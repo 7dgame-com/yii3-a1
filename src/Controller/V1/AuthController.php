@@ -92,7 +92,7 @@ final class AuthController
     /**
      * POST /v1/auth/key-to-token
      *
-     * Authenticate via a UserLinked key.
+     * Authenticate via a server-managed short-lived login key.
      * Returns {success, message, nickname, token, user} on success — matching Yii2 format.
      *
      * @see Requirement 3.5
