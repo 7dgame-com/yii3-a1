@@ -34,7 +34,8 @@ return [
         }
 
         return new UrlMatcher($routeCollection, $cache, [
-            UrlMatcher::CONFIG_CACHE_KEY => 'yii3-a1:routes:' . $routesHash,
+            // PSR-16 cache keys reject reserved characters such as ":".
+            UrlMatcher::CONFIG_CACHE_KEY => 'yii3-a1-routes-' . $routesHash,
         ]);
     },
 ];
