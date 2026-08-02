@@ -169,6 +169,33 @@ final class AuthService
         ];
     }
 
+    /**
+     * Read white-label metadata for an active QR login code without changing
+     * either existing token-exchange response contract.
+     *
+     * @return array{success: true, message: string, frontendDomain: ?string}
+     */
+    public function loginCodeContext(string $key): array
+    {
+        $loginCode = $this->loginCodeStore->resolveForContext(
+            $this->normalizeRefreshTokenInput($key),
+        );
+
+        if ($loginCode->isInfrastructureFailure()) {
+            throw new RuntimeException('Login code storage is unavailable.', 503);
+        }
+
+        if ($loginCode->status !== LoginCodeLookupStatus::HIT || $loginCode->userId === null) {
+            throw new RuntimeException('Linked key is invalid.', 400);
+        }
+
+        return [
+            'success' => true,
+            'message' => 'loginCodeContext',
+            'frontendDomain' => $loginCode->frontendDomain,
+        ];
+    }
+
     private function normalizeRefreshTokenInput(string $refreshToken): string
     {
         $token = trim($refreshToken);

@@ -26,6 +26,7 @@ final class LoginCodeStore
     private const RECORD_RETENTION_MILLISECONDS = 300_000;
     private const ACTIVE_PTTL_MINIMUM_MILLISECONDS = 240_000;
     private const MINIMUM_LOGIN_CODE_LENGTH = 32;
+    private const FRONTEND_DOMAIN_MAX_BYTES = 253;
 
     private readonly LoginCodeRedisClient $redis;
 
@@ -61,6 +62,12 @@ final class LoginCodeStore
     public function resolveForKeyToToken(string $rawLoginCode): LoginCodeLookupResult
     {
         return $this->resolveForSource($rawLoginCode, LoginCodeTelemetry::SOURCE_YII3_KEY_TO_TOKEN);
+    }
+
+    /** Resolve a login code for the dedicated white-label context endpoint. */
+    public function resolveForContext(string $rawLoginCode): LoginCodeLookupResult
+    {
+        return $this->resolveForSource($rawLoginCode, LoginCodeTelemetry::SOURCE_YII3_CONTEXT);
     }
 
     private function resolveForSource(string $rawLoginCode, string $telemetrySource): LoginCodeLookupResult
@@ -174,11 +181,15 @@ final class LoginCodeStore
             return LoginCodeLookupResult::expired($nowMilliseconds);
         }
 
-        return LoginCodeLookupResult::hit($record['user_id'], $nowMilliseconds);
+        return LoginCodeLookupResult::hit(
+            $record['user_id'],
+            $nowMilliseconds,
+            $record['frontend_domain'],
+        );
     }
 
     /**
-     * @return array{user_id: int, expires_at: int}|null
+     * @return array{user_id: int, expires_at: int, frontend_domain: ?string}|null
      */
     private function parseCodeRecord(string $payload, int $nowMilliseconds): ?array
     {
@@ -230,10 +241,39 @@ final class LoginCodeStore
             return null;
         }
 
+        $frontendDomain = null;
+        if (property_exists($record->context, 'frontend_domain')) {
+            if (!is_string($record->context->frontend_domain)
+                || !$this->isValidFrontendDomain($record->context->frontend_domain)) {
+                return null;
+            }
+            $frontendDomain = $record->context->frontend_domain;
+        }
+
         return [
             'user_id' => $record->user_id,
             'expires_at' => $record->expires_at,
+            'frontend_domain' => $frontendDomain,
         ];
+    }
+
+    private function isValidFrontendDomain(string $domain): bool
+    {
+        if ($domain === ''
+            || strlen($domain) > self::FRONTEND_DOMAIN_MAX_BYTES
+            || $domain !== strtolower($domain)
+            || str_ends_with($domain, '.')) {
+            return false;
+        }
+
+        if ($domain === 'localhost' || filter_var($domain, FILTER_VALIDATE_IP) !== false) {
+            return true;
+        }
+
+        return preg_match(
+            '/\A(?=.{1,253}\z)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\z/D',
+            $domain
+        ) === 1;
     }
 
     private function resolveLegacyDatabase(string $rawLoginCode, ?int $redisTimeMilliseconds = null): LoginCodeLookupResult

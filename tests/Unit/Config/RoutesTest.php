@@ -52,8 +52,8 @@ final class RoutesTest extends TestCase
 
     public function testTotalRouteCount(): void
     {
-        // 3 auth + 7 server + 1 phototype + 4 v2 + 1 health + 2 swagger = 18
-        $this->assertCount(18, $this->routes);
+        // 4 auth + 7 server + 1 phototype + 4 v2 + 1 health + 2 swagger = 19
+        $this->assertCount(19, $this->routes);
     }
 
     // =========================================================================
@@ -81,6 +81,14 @@ final class RoutesTest extends TestCase
         $route = $this->findRouteByName('v1.auth.key-to-token');
         $this->assertNotNull($route, 'Route v1.auth.key-to-token should exist');
         $this->assertSame('/v1/auth/key-to-token', $route->getData('pattern'));
+        $this->assertSame(['POST'], $route->getData('methods'));
+    }
+
+    public function testV1AuthLoginCodeContextRoute(): void
+    {
+        $route = $this->findRouteByName('v1.auth.login-code-context');
+        $this->assertNotNull($route, 'Route v1.auth.login-code-context should exist');
+        $this->assertSame('/v1/auth/login-code-context', $route->getData('pattern'));
         $this->assertSame(['POST'], $route->getData('methods'));
     }
 
@@ -238,6 +246,7 @@ final class RoutesTest extends TestCase
             'v1.auth.login',
             'v1.auth.refresh',
             'v1.auth.key-to-token',
+            'v1.auth.login-code-context',
             'v1.server.test',
             'v1.server.public',
             'v1.server.checkin',
@@ -298,6 +307,7 @@ final class RoutesTest extends TestCase
             '/v1/auth/login',
             '/v1/auth/refresh',
             '/v1/auth/key-to-token',
+            '/v1/auth/login-code-context',
             '/v1/server/test',
             '/v1/server/public',
             '/v1/server/checkin',

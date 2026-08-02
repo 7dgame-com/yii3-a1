@@ -216,6 +216,18 @@ final class AuthControllerTest extends TestCase
         $this->refreshTokenService->delete($nt);
     }
 
+    public function testLoginCodeContextRequiresKey(): void
+    {
+        $b = null;
+        $sc = null;
+        $this->errResp($b, $sc);
+
+        $this->controller->loginCodeContext($this->req([]));
+
+        $this->assertSame(400, $sc);
+        $this->assertSame('key is required', json_decode((string) $b, true)['message']);
+    }
+
     private function req(array $body): ServerRequestInterface
     {
         $r = $this->createMock(ServerRequestInterface::class);

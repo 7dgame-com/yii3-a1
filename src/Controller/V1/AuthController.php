@@ -18,6 +18,7 @@ use RuntimeException;
  * - POST /v1/auth/login: Authenticate with username/password
  * - POST /v1/auth/refresh: Refresh token pair using a refresh token
  * - POST /v1/auth/key-to-token: Authenticate via a linked key
+ * - POST /v1/auth/login-code-context: Read optional white-label metadata
  *
  * All endpoints return JSON responses with {accessToken, refreshToken} on success,
  * or {status, message} on error (matching Yii2 error format).
@@ -110,6 +111,30 @@ final class AuthController
             $result = $this->authService->keyToToken((string) $key);
 
             return $this->createJsonResponse($result);
+        } catch (RuntimeException $e) {
+            return $this->createErrorResponse($e->getCode() ?: 400, $e->getMessage());
+        }
+    }
+
+    /**
+     * POST /v1/auth/login-code-context
+     *
+     * Read the originating frontend domain for an active login code. This is
+     * metadata only and does not issue tokens or authorize a frontend domain.
+     */
+    public function loginCodeContext(ServerRequestInterface $request): ResponseInterface
+    {
+        $body = $request->getParsedBody();
+        $key = $body['key'] ?? '';
+
+        if (empty($key)) {
+            return $this->createErrorResponse(400, 'key is required');
+        }
+
+        try {
+            return $this->createJsonResponse(
+                $this->authService->loginCodeContext((string) $key),
+            );
         } catch (RuntimeException $e) {
             return $this->createErrorResponse($e->getCode() ?: 400, $e->getMessage());
         }

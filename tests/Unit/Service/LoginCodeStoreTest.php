@@ -53,6 +53,41 @@ final class LoginCodeStoreTest extends TestCase
         $this->assertSame(LoginCodeLookupStatus::EXPIRED, $result->status);
     }
 
+    public function testRedisHitReturnsOptionalFrontendDomainMetadata(): void
+    {
+        $redis = new ControlledLoginCodeRedisClient(
+            $this->recordPayload(
+                userId: 42,
+                issuedAt: self::REDIS_NOW,
+                frontendDomain: 'd.dev.xrugc.com',
+            ),
+            240_001,
+            [self::REDIS_NOW, 0],
+        );
+
+        $result = $this->redisStore($redis)->resolve(str_repeat('b', 64));
+
+        $this->assertSame(LoginCodeLookupStatus::HIT, $result->status);
+        $this->assertSame('d.dev.xrugc.com', $result->frontendDomain);
+    }
+
+    public function testInvalidFrontendDomainMetadataFailsClosed(): void
+    {
+        $redis = new ControlledLoginCodeRedisClient(
+            $this->recordPayload(
+                userId: 42,
+                issuedAt: self::REDIS_NOW,
+                frontendDomain: 'https://d.dev.xrugc.com',
+            ),
+            240_001,
+            [self::REDIS_NOW, 0],
+        );
+
+        $result = $this->redisStore($redis)->resolve(str_repeat('b', 64));
+
+        $this->assertSame(LoginCodeLookupStatus::MALFORMED, $result->status);
+    }
+
     public function testRedisTimeOneMillisecondBeforeExpiresAtRemainsHitWhenPttlIsAboveBoundary(): void
     {
         $issuedAt = self::REDIS_NOW;
@@ -481,8 +516,12 @@ final class LoginCodeStoreTest extends TestCase
         );
     }
 
-    private function recordPayload(int $userId, int $issuedAt): string
+    private function recordPayload(int $userId, int $issuedAt, ?string $frontendDomain = null): string
     {
+        $context = $frontendDomain === null
+            ? (object) []
+            : ['frontend_domain' => $frontendDomain];
+
         return json_encode([
             'v' => 1,
             'user_id' => $userId,
@@ -490,7 +529,7 @@ final class LoginCodeStoreTest extends TestCase
             'expires_at' => $issuedAt + LoginCodeSettings::ACTIVE_WINDOW_SECONDS,
             'purpose' => 'web-device-login',
             'issuer' => 'main-api',
-            'context' => (object) [],
+            'context' => $context,
         ], JSON_THROW_ON_ERROR);
     }
 

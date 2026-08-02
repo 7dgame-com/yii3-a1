@@ -177,6 +177,8 @@ final class AuthServiceTest extends TestCase
 
         $this->assertTrue($first['success']);
         $this->assertTrue($second['success']);
+        $this->assertArrayNotHasKey('frontendDomain', $first);
+        $this->assertArrayNotHasKey('frontendDomain', $second);
         $this->assertCount(2, $loginCodeRedis->getKeys);
         $this->assertSame($loginCodeStore->keyFor($rawCode), $loginCodeRedis->getKeys[0]);
         $this->assertSame($loginCodeStore->keyFor($rawCode), $loginCodeRedis->getKeys[1]);
@@ -297,8 +299,62 @@ final class AuthServiceTest extends TestCase
 
         $this->assertTrue($result['success']);
         $this->assertSame('keyToToken', $result['message']);
+        $this->assertArrayNotHasKey('frontendDomain', $result);
         $this->assertNotEmpty($result['token']['accessToken']);
         $this->refreshTokenService->delete($result['token']['refreshToken']);
+    }
+
+    public function testLoginCodeContextReturnsDomainWithoutChangingTokenEndpoints(): void
+    {
+        $rawCode = bin2hex(random_bytes(32));
+        $loginCodeStore = new LoginCodeStore(
+            new ControlledLoginCodeRedisClient(
+                $this->redisCodePayload(
+                    userId: 42,
+                    issuedAt: 1_780_000_000,
+                    frontendDomain: 'd.dev.xrugc.com',
+                ),
+                240_001,
+                [1_780_000_000, 0],
+            ),
+            new LoginCodeSettings(
+                readMode: LoginCodeSettings::READ_REDIS,
+                writeMode: LoginCodeSettings::WRITE_REDIS,
+            ),
+            StaticLoginCodeReadiness::ready(),
+        );
+        $authService = new AuthService($this->jwtService, $this->refreshTokenService, $loginCodeStore);
+
+        $result = $authService->loginCodeContext('https://example.invalid/?web_' . $rawCode);
+
+        $this->assertSame([
+            'success' => true,
+            'message' => 'loginCodeContext',
+            'frontendDomain' => 'd.dev.xrugc.com',
+        ], $result);
+    }
+
+    public function testLoginCodeContextReturnsNullForCompatibleOldRecord(): void
+    {
+        $rawCode = bin2hex(random_bytes(32));
+        $loginCodeStore = new LoginCodeStore(
+            new ControlledLoginCodeRedisClient(
+                $this->redisCodePayload(userId: 42, issuedAt: 1_780_000_000),
+                240_001,
+                [1_780_000_000, 0],
+            ),
+            new LoginCodeSettings(
+                readMode: LoginCodeSettings::READ_REDIS,
+                writeMode: LoginCodeSettings::WRITE_REDIS,
+            ),
+            StaticLoginCodeReadiness::ready(),
+        );
+        $authService = new AuthService($this->jwtService, $this->refreshTokenService, $loginCodeStore);
+
+        $result = $authService->loginCodeContext($rawCode);
+
+        $this->assertTrue($result['success']);
+        $this->assertNull($result['frontendDomain']);
     }
 
     public function testRefreshNormalizesWebQueryWrappedRedisLoginCode(): void
@@ -468,8 +524,12 @@ final class AuthServiceTest extends TestCase
         return (new DateTimeImmutable($modifier, new DateTimeZone('Asia/Shanghai')))->format('Y-m-d H:i:s');
     }
 
-    private function redisCodePayload(int $userId, int $issuedAt): string
+    private function redisCodePayload(int $userId, int $issuedAt, ?string $frontendDomain = null): string
     {
+        $context = $frontendDomain === null
+            ? (object) []
+            : ['frontend_domain' => $frontendDomain];
+
         return json_encode([
             'v' => 1,
             'user_id' => $userId,
@@ -477,7 +537,7 @@ final class AuthServiceTest extends TestCase
             'expires_at' => $issuedAt + LoginCodeSettings::ACTIVE_WINDOW_SECONDS,
             'purpose' => 'web-device-login',
             'issuer' => 'main-api',
-            'context' => (object) [],
+            'context' => $context,
         ], JSON_THROW_ON_ERROR);
     }
 }

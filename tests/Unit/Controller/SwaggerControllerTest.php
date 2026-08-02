@@ -398,6 +398,7 @@ final class SwaggerControllerTest extends TestCase
         $this->assertContains('/v1/auth/login', $paths);
         $this->assertContains('/v1/auth/refresh', $paths);
         $this->assertContains('/v1/auth/key-to-token', $paths);
+        $this->assertContains('/v1/auth/login-code-context', $paths);
         $this->assertContains('/v1/server/test', $paths);
         $this->assertContains('/v1/server/public', $paths);
         $this->assertContains('/v1/server/checkin', $paths);

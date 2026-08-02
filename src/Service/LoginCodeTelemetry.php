@@ -17,6 +17,7 @@ final class LoginCodeTelemetry
 {
     public const SOURCE_YII3_REFRESH = 'yii3-refresh';
     public const SOURCE_YII3_KEY_TO_TOKEN = 'yii3-key-to-token';
+    public const SOURCE_YII3_CONTEXT = 'yii3-login-code-context';
 
     private const EVENT_MESSAGE = 'Login-code protocol event.';
     private const INVALID_DIMENSIONS_MESSAGE = 'Rejected invalid login-code telemetry dimensions.';
@@ -44,6 +45,7 @@ final class LoginCodeTelemetry
     private const SOURCES = [
         self::SOURCE_YII3_REFRESH,
         self::SOURCE_YII3_KEY_TO_TOKEN,
+        self::SOURCE_YII3_CONTEXT,
     ];
 
     public function __construct(private readonly ?LoggerInterface $logger = null)

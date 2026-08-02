@@ -98,6 +98,46 @@ use Psr\Http\Message\StreamFactoryInterface;
         new OA\Response(response: 400, description: 'Invalid request'),
     ],
 )]
+#[OA\Post(
+    path: '/v1/auth/login-code-context',
+    operationId: 'v1AuthLoginCodeContext',
+    summary: 'Read frontend metadata for an active login code',
+    description: 'Returns metadata only. The frontend domain is not an authorization decision.',
+    tags: ['Authentication'],
+    requestBody: new OA\RequestBody(
+        required: true,
+        content: new OA\JsonContent(
+            required: ['key'],
+            properties: [
+                new OA\Property(property: 'key', type: 'string'),
+            ],
+            type: 'object',
+        ),
+    ),
+    responses: [
+        new OA\Response(
+            response: 200,
+            description: 'Login-code context resolved',
+            content: new OA\JsonContent(
+                required: ['success', 'message', 'frontendDomain'],
+                properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string', example: 'loginCodeContext'),
+                    new OA\Property(
+                        property: 'frontendDomain',
+                        description: 'Originating frontend host; null for compatible legacy records.',
+                        type: 'string',
+                        nullable: true,
+                        example: 'd.dev.xrugc.com',
+                    ),
+                ],
+                type: 'object',
+            ),
+        ),
+        new OA\Response(response: 400, description: 'Login code is invalid or expired'),
+        new OA\Response(response: 503, description: 'Login-code storage is unavailable'),
+    ],
+)]
 #[OA\Get(
     path: '/v1/server/test',
     operationId: 'v1ServerTest',

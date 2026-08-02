@@ -63,7 +63,7 @@ final class LoginCodeTelemetryTest extends TestCase
         );
     }
 
-    public function testStoreEmitsRedactedFixedEventsForRefreshAndKeyToToken(): void
+    public function testStoreEmitsRedactedFixedEventsForAllThreeConsumers(): void
     {
         $rawCode = 'code-secret-' . str_repeat('e', 48);
         $digest = hash('sha256', $rawCode);
@@ -85,12 +85,15 @@ final class LoginCodeTelemetryTest extends TestCase
 
         $store->resolve($rawCode);
         $store->resolveForKeyToToken($rawCode);
+        $store->resolveForContext($rawCode);
 
         $this->assertSame([
             ['event' => 'redis_hit', 'source' => 'yii3-refresh'],
             ['event' => 'active', 'source' => 'yii3-refresh'],
             ['event' => 'redis_hit', 'source' => 'yii3-key-to-token'],
             ['event' => 'active', 'source' => 'yii3-key-to-token'],
+            ['event' => 'redis_hit', 'source' => 'yii3-login-code-context'],
+            ['event' => 'active', 'source' => 'yii3-login-code-context'],
         ], array_column($logger->records, 'context'));
         $this->assertSensitiveValuesAndLabelsAreAbsent(
             $logger->records,

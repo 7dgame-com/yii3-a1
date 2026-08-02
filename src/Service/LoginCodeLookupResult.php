@@ -15,12 +15,17 @@ final class LoginCodeLookupResult
         public readonly LoginCodeLookupStatus $status,
         public readonly ?int $userId = null,
         public readonly ?int $redisTimeMilliseconds = null,
+        public readonly ?string $frontendDomain = null,
     ) {
     }
 
-    public static function hit(int $userId, ?int $redisTimeMilliseconds = null): self
+    public static function hit(
+        int $userId,
+        ?int $redisTimeMilliseconds = null,
+        ?string $frontendDomain = null,
+    ): self
     {
-        return new self(LoginCodeLookupStatus::HIT, $userId, $redisTimeMilliseconds);
+        return new self(LoginCodeLookupStatus::HIT, $userId, $redisTimeMilliseconds, $frontendDomain);
     }
 
     public static function miss(?int $redisTimeMilliseconds = null): self
