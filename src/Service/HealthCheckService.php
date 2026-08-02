@@ -20,6 +20,8 @@ use Yiisoft\Db\Connection\ConnectionInterface;
  */
 final class HealthCheckService
 {
+    private const LOGIN_CODE_REDIS_MEMORY_ALERT_PERCENT = 80;
+
     public function __construct(
         private ConnectionInterface $db,
         private RedisClient $redis,
@@ -41,9 +43,14 @@ final class HealthCheckService
         $redisResult = $this->checkRedis();
         $loginCodeReadiness = $this->checkLoginCodeReadiness();
 
+        $loginCodeCapacity = $loginCodeReadiness?->required && $loginCodeReadiness->ready
+            ? $this->checkLoginCodeRedisCapacity()
+            : null;
+
         $allHealthy = $mysqlResult['status'] === 'up'
             && $redisResult['status'] === 'up'
-            && ($loginCodeReadiness === null || !$loginCodeReadiness->required || $loginCodeReadiness->ready);
+            && ($loginCodeReadiness === null || !$loginCodeReadiness->required || $loginCodeReadiness->ready)
+            && ($loginCodeCapacity === null || $loginCodeCapacity['status'] === 'up');
 
         $services = [
             'database' => $mysqlResult,
@@ -54,7 +61,9 @@ final class HealthCheckService
         // never call Redis TIME through this path. Redis modes expose only a
         // fixed, redacted status/reason vocabulary.
         if ($loginCodeReadiness?->required) {
-            $services['login_code'] = $loginCodeReadiness->toHealthDetail();
+            $services['login_code'] = $loginCodeCapacity !== null && $loginCodeCapacity['status'] !== 'up'
+                ? $loginCodeCapacity
+                : array_merge($loginCodeReadiness->toHealthDetail(), $loginCodeCapacity ?? []);
         }
 
         return new HealthResult(
@@ -154,5 +163,92 @@ final class HealthCheckService
                 'error' => $e->getMessage(),
             ];
         }
+    }
+
+    /** @return array<string, int|string|bool> */
+    private function checkLoginCodeRedisCapacity(): array
+    {
+        try {
+            $memory = $this->parseRedisInfo($this->redis->info('memory'));
+            $stats = $this->parseRedisInfo($this->redis->info('stats'));
+            $usedMemory = $this->parseNonNegativeRedisInteger($memory['used_memory'] ?? null);
+            $maxMemory = $this->parseNonNegativeRedisInteger($memory['maxmemory'] ?? null);
+            $evictedKeys = $this->parseNonNegativeRedisInteger($stats['evicted_keys'] ?? null);
+            $policy = strtolower(trim((string) ($memory['maxmemory_policy'] ?? '')));
+
+            if ($usedMemory === null || $maxMemory === null || $maxMemory === 0 || $evictedKeys === null) {
+                return $this->loginCodeCapacityFailure('redis_memory_configuration');
+            }
+            if ($policy !== 'noeviction') {
+                return $this->loginCodeCapacityFailure('redis_eviction_policy');
+            }
+            if (($usedMemory / $maxMemory) * 100 >= self::LOGIN_CODE_REDIS_MEMORY_ALERT_PERCENT) {
+                return $this->loginCodeCapacityFailure('redis_memory_threshold');
+            }
+            if ($evictedKeys !== 0) {
+                return $this->loginCodeCapacityFailure('redis_evictions_detected');
+            }
+
+            return [
+                'status' => 'up',
+                'required' => true,
+                'memory_alert_threshold_percent' => self::LOGIN_CODE_REDIS_MEMORY_ALERT_PERCENT,
+                'memory_usage' => 'below_threshold',
+                'maxmemory_policy' => 'noeviction',
+                'eviction_alert' => 'configured_zero',
+            ];
+        } catch (\Throwable) {
+            return $this->loginCodeCapacityFailure('readiness_unavailable');
+        }
+    }
+
+    /** @return array<string, string> */
+    private function parseRedisInfo(mixed $value): array
+    {
+        $result = [];
+        if (is_array($value)) {
+            foreach ($value as $key => $item) {
+                if (is_string($key) && (is_scalar($item) || $item === null)) {
+                    $result[strtolower($key)] = trim((string) $item);
+                } elseif (is_array($item)) {
+                    $result = array_merge($result, $this->parseRedisInfo($item));
+                }
+            }
+            return $result;
+        }
+
+        foreach (preg_split('/\r?\n/', (string) $value) ?: [] as $line) {
+            if ($line === '' || str_starts_with($line, '#') || !str_contains($line, ':')) {
+                continue;
+            }
+            [$key, $item] = explode(':', $line, 2);
+            $result[strtolower(trim($key))] = trim($item);
+        }
+        return $result;
+    }
+
+    private function parseNonNegativeRedisInteger(mixed $value): ?int
+    {
+        if (is_int($value)) {
+            return $value >= 0 ? $value : null;
+        }
+        if (!is_string($value) || preg_match('/^(?:0|[1-9]\d*)$/D', $value) !== 1) {
+            return null;
+        }
+        $maximum = (string) PHP_INT_MAX;
+        if (strlen($value) > strlen($maximum) || (strlen($value) === strlen($maximum) && strcmp($value, $maximum) > 0)) {
+            return null;
+        }
+        return (int) $value;
+    }
+
+    /** @return array{status: string, required: bool, reason: string} */
+    private function loginCodeCapacityFailure(string $reason): array
+    {
+        return [
+            'status' => 'down',
+            'required' => true,
+            'reason' => $reason,
+        ];
     }
 }

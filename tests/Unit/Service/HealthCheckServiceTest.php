@@ -230,7 +230,19 @@ final class HealthCheckServiceTest extends TestCase
         $readiness = new StaticLoginCodeReadiness(LoginCodeReadinessResult::skipped());
         $service = new HealthCheckService(
             $this->createHealthyDbMock(),
-            $this->createHealthyRedisMock(),
+            new class extends RedisClient {
+                public function __construct()
+                {
+                }
+
+                public function __call($commandID, $arguments)
+                {
+                    if (strtoupper($commandID) === 'PING') {
+                        return new \Predis\Response\Status('PONG');
+                    }
+                    throw new \RuntimeException('Database mode must not request Redis capacity INFO.');
+                }
+            },
             $readiness,
         );
 
@@ -285,7 +297,57 @@ final class HealthCheckServiceTest extends TestCase
             'issue_limit' => 6,
             'limiter' => 'redis-zset-sliding-window',
             'clock_sync' => 'within_1s',
+            'memory_alert_threshold_percent' => 80,
+            'memory_usage' => 'below_threshold',
+            'maxmemory_policy' => 'noeviction',
+            'eviction_alert' => 'configured_zero',
         ], $result->services['login_code']);
+    }
+
+    public function testReadyLoginCodeHealthFailsAtMemoryAlertThreshold(): void
+    {
+        $service = new HealthCheckService(
+            $this->createHealthyDbMock(),
+            $this->createHealthyRedisMock(80, 100),
+            StaticLoginCodeReadiness::ready(),
+        );
+
+        $result = $service->check();
+
+        $this->assertSame('unhealthy', $result->status);
+        $this->assertSame([
+            'status' => 'down',
+            'required' => true,
+            'reason' => 'redis_memory_threshold',
+        ], $result->services['login_code']);
+    }
+
+    public function testReadyLoginCodeHealthFailsWhenRedisHasEvictedAKey(): void
+    {
+        $service = new HealthCheckService(
+            $this->createHealthyDbMock(),
+            $this->createHealthyRedisMock(evictedKeys: 1),
+            StaticLoginCodeReadiness::ready(),
+        );
+
+        $result = $service->check();
+
+        $this->assertSame('unhealthy', $result->status);
+        $this->assertSame('redis_evictions_detected', $result->services['login_code']['reason']);
+    }
+
+    public function testReadyLoginCodeHealthRejectsAnEvictingPolicy(): void
+    {
+        $service = new HealthCheckService(
+            $this->createHealthyDbMock(),
+            $this->createHealthyRedisMock(policy: 'allkeys-lru'),
+            StaticLoginCodeReadiness::ready(),
+        );
+
+        $result = $service->check();
+
+        $this->assertSame('unhealthy', $result->status);
+        $this->assertSame('redis_eviction_policy', $result->services['login_code']['reason']);
     }
 
     // ---------------------------------------------------------------
@@ -351,10 +413,20 @@ final class HealthCheckServiceTest extends TestCase
         return $db;
     }
 
-    private function createHealthyRedisMock(): RedisClient
+    private function createHealthyRedisMock(
+        int $usedMemory = 10,
+        int $maxMemory = 100,
+        string $policy = 'noeviction',
+        int $evictedKeys = 0,
+    ): RedisClient
     {
-        return new class extends RedisClient {
-            public function __construct()
+        return new class($usedMemory, $maxMemory, $policy, $evictedKeys) extends RedisClient {
+            public function __construct(
+                private readonly int $usedMemory,
+                private readonly int $maxMemory,
+                private readonly string $policy,
+                private readonly int $evictedKeys,
+            )
             {
             }
 
@@ -362,6 +434,18 @@ final class HealthCheckServiceTest extends TestCase
             {
                 if (strtoupper($commandID) === 'PING') {
                     return new \Predis\Response\Status('PONG');
+                }
+                if (strtoupper($commandID) === 'INFO' && ($arguments[0] ?? null) === 'memory') {
+                    return [
+                        'Memory' => [
+                            'used_memory' => (string) $this->usedMemory,
+                            'maxmemory' => (string) $this->maxMemory,
+                            'maxmemory_policy' => $this->policy,
+                        ],
+                    ];
+                }
+                if (strtoupper($commandID) === 'INFO' && ($arguments[0] ?? null) === 'stats') {
+                    return ['Stats' => ['evicted_keys' => (string) $this->evictedKeys]];
                 }
                 return null;
             }
