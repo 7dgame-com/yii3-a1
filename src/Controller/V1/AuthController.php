@@ -18,6 +18,7 @@ use RuntimeException;
  * - POST /v1/auth/login: Authenticate with username/password
  * - POST /v1/auth/refresh: Refresh token pair using a refresh token
  * - POST /v1/auth/key-to-token: Authenticate via a linked key
+ * - POST /v1/auth/key-to-token-with-url: Authenticate and return the originating frontend URL
  * - POST /v1/auth/login-code-context: Read optional white-label metadata
  *
  * All endpoints return JSON responses with {accessToken, refreshToken} on success,
@@ -111,6 +112,30 @@ final class AuthController
             $result = $this->authService->keyToToken((string) $key);
 
             return $this->createJsonResponse($result);
+        } catch (RuntimeException $e) {
+            return $this->createErrorResponse($e->getCode() ?: 400, $e->getMessage());
+        }
+    }
+
+    /**
+     * POST /v1/auth/key-to-token-with-url
+     *
+     * Authenticate via a login code and return both the token payload and the
+     * trusted frontend URL captured when the code was issued.
+     */
+    public function keyToTokenWithUrl(ServerRequestInterface $request): ResponseInterface
+    {
+        $body = $request->getParsedBody();
+        $key = $body['key'] ?? '';
+
+        if (empty($key)) {
+            return $this->createErrorResponse(400, 'key is required');
+        }
+
+        try {
+            return $this->createJsonResponse(
+                $this->authService->keyToTokenWithUrl((string) $key),
+            );
         } catch (RuntimeException $e) {
             return $this->createErrorResponse($e->getCode() ?: 400, $e->getMessage());
         }

@@ -15,6 +15,7 @@ use Yiisoft\ActiveRecord\ActiveQuery;
  * - login: validate credentials and generate token pair
  * - refresh: rotate refresh tokens and generate new token pair
  * - keyToToken: authenticate via a short-lived login code and generate token pair
+ * - keyToTokenWithUrl: generate a token pair plus its trusted frontend URL
  *
  * @see Requirements 3.1, 3.2, 3.5
  */
@@ -170,6 +171,64 @@ final class AuthService
     }
 
     /**
+     * Authenticate via a reusable QR login code and return the token payload
+     * together with its trusted white-label frontend URL.
+     *
+     * URL metadata is optional: active compatible codes without a frontend
+     * domain still receive tokens, while the response simply omits `url`.
+     *
+     * @return array{
+     *     success: true,
+     *     message: string,
+     *     nickname: mixed,
+     *     token: array{accessToken: string, expires: string, refreshToken: string},
+     *     user: User,
+     *     url?: string
+     * }
+     */
+    public function keyToTokenWithUrl(string $key): array
+    {
+        $loginCode = $this->loginCodeStore->resolveForKeyToToken(
+            $this->normalizeRefreshTokenInput($key),
+        );
+
+        if ($loginCode->isInfrastructureFailure()) {
+            throw new RuntimeException('Login code storage is unavailable.', 503);
+        }
+
+        if ($loginCode->status !== LoginCodeLookupStatus::HIT || $loginCode->userId === null) {
+            throw new RuntimeException('Linked key is invalid.', 400);
+        }
+
+        $userId = $loginCode->userId;
+        if ($userId <= 0) {
+            throw new RuntimeException('User is not found.', 400);
+        }
+
+        $user = (new ActiveQuery(User::class))
+            ->where(['id' => $userId])
+            ->one();
+
+        if ($user === null) {
+            throw new RuntimeException('User is not found.', 400);
+        }
+
+        $result = [
+            'success' => true,
+            'message' => 'keyToTokenWithUrl',
+            'nickname' => $user->get('nickname') ?? '',
+            'token' => $this->generateTokenPair($userId),
+            'user' => $user,
+        ];
+
+        if ($loginCode->frontendDomain !== null) {
+            $result['url'] = $this->buildFrontendUrl($loginCode->frontendDomain);
+        }
+
+        return $result;
+    }
+
+    /**
      * Read white-label metadata for an active QR login code without changing
      * either existing token-exchange response contract.
      *
@@ -230,5 +289,14 @@ final class AuthService
             'expires' => $expires->format('Y-m-d H:i:s'),
             'refreshToken' => $refreshToken,
         ];
+    }
+
+    private function buildFrontendUrl(string $frontendDomain): string
+    {
+        $host = filter_var($frontendDomain, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false
+            ? '[' . $frontendDomain . ']'
+            : $frontendDomain;
+
+        return 'https://' . $host;
     }
 }

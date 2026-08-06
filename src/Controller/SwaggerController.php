@@ -99,6 +99,58 @@ use Psr\Http\Message\StreamFactoryInterface;
     ],
 )]
 #[OA\Post(
+    path: '/v1/auth/key-to-token-with-url',
+    operationId: 'v1AuthKeyToTokenWithUrl',
+    summary: 'Exchange a login code for tokens and its frontend URL',
+    description: 'Returns a token payload and, when available, an HTTPS URL derived from the trusted frontend domain captured at issue time. Existing token endpoints are unchanged.',
+    tags: ['Authentication'],
+    requestBody: new OA\RequestBody(
+        required: true,
+        content: new OA\JsonContent(
+            required: ['key'],
+            properties: [
+                new OA\Property(property: 'key', type: 'string'),
+            ],
+            type: 'object',
+        ),
+    ),
+    responses: [
+        new OA\Response(
+            response: 200,
+            description: 'Authenticated with frontend URL',
+            content: new OA\JsonContent(
+                required: ['success', 'message', 'nickname', 'token', 'user'],
+                properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string', example: 'keyToTokenWithUrl'),
+                    new OA\Property(property: 'nickname', type: 'string'),
+                    new OA\Property(
+                        property: 'token',
+                        required: ['accessToken', 'expires', 'refreshToken'],
+                        properties: [
+                            new OA\Property(property: 'accessToken', type: 'string'),
+                            new OA\Property(property: 'expires', type: 'string'),
+                            new OA\Property(property: 'refreshToken', type: 'string'),
+                        ],
+                        type: 'object',
+                    ),
+                    new OA\Property(property: 'user', type: 'object'),
+                    new OA\Property(
+                        property: 'url',
+                        description: 'Present only when the login code contains a trusted frontend domain.',
+                        type: 'string',
+                        format: 'uri',
+                        example: 'https://d.dev.xrugc.com',
+                    ),
+                ],
+                type: 'object',
+            ),
+        ),
+        new OA\Response(response: 400, description: 'Login code is invalid or expired'),
+        new OA\Response(response: 503, description: 'Login-code storage is unavailable'),
+    ],
+)]
+#[OA\Post(
     path: '/v1/auth/login-code-context',
     operationId: 'v1AuthLoginCodeContext',
     summary: 'Read frontend metadata for an active login code',

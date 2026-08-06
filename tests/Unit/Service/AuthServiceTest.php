@@ -300,7 +300,74 @@ final class AuthServiceTest extends TestCase
         $this->assertTrue($result['success']);
         $this->assertSame('keyToToken', $result['message']);
         $this->assertArrayNotHasKey('frontendDomain', $result);
+        $this->assertArrayNotHasKey('url', $result);
         $this->assertNotEmpty($result['token']['accessToken']);
+        $this->refreshTokenService->delete($result['token']['refreshToken']);
+    }
+
+    public function testKeyToTokenWithUrlAcceptsAllInputFormatsAndReturnsTokenAndHttpsUrl(): void
+    {
+        $rawCode = bin2hex(random_bytes(32));
+        $loginCodeStore = new LoginCodeStore(
+            new ControlledLoginCodeRedisClient(
+                $this->redisCodePayload(
+                    userId: 42,
+                    issuedAt: 1_780_000_000,
+                    frontendDomain: 'd.dev.xrugc.com',
+                ),
+                240_001,
+                [1_780_000_000, 0],
+            ),
+            new LoginCodeSettings(
+                readMode: LoginCodeSettings::READ_REDIS,
+                writeMode: LoginCodeSettings::WRITE_REDIS,
+            ),
+            StaticLoginCodeReadiness::ready(),
+        );
+        $authService = new AuthService($this->jwtService, $this->refreshTokenService, $loginCodeStore);
+
+        $inputs = [
+            $rawCode,
+            'web_' . $rawCode,
+            'https://example.invalid/login?web_' . $rawCode,
+        ];
+
+        foreach ($inputs as $input) {
+            $result = $authService->keyToTokenWithUrl($input);
+
+            $this->assertTrue($result['success']);
+            $this->assertSame('keyToTokenWithUrl', $result['message']);
+            $this->assertSame('https://d.dev.xrugc.com', $result['url']);
+            $this->assertNotEmpty($result['token']['accessToken']);
+            $this->assertNotEmpty($result['token']['refreshToken']);
+            $this->assertSame(42, $this->refreshTokenService->validate($result['token']['refreshToken']));
+            $this->refreshTokenService->delete($result['token']['refreshToken']);
+        }
+    }
+
+    public function testKeyToTokenWithUrlIssuesTokenAndOmitsUrlWhenDomainIsMissing(): void
+    {
+        $rawCode = bin2hex(random_bytes(32));
+        $loginCodeStore = new LoginCodeStore(
+            new ControlledLoginCodeRedisClient(
+                $this->redisCodePayload(userId: 42, issuedAt: 1_780_000_000),
+                240_001,
+                [1_780_000_000, 0],
+            ),
+            new LoginCodeSettings(
+                readMode: LoginCodeSettings::READ_REDIS,
+                writeMode: LoginCodeSettings::WRITE_REDIS,
+            ),
+            StaticLoginCodeReadiness::ready(),
+        );
+        $authService = new AuthService($this->jwtService, $this->refreshTokenService, $loginCodeStore);
+        $result = $authService->keyToTokenWithUrl($rawCode);
+
+        $this->assertTrue($result['success']);
+        $this->assertSame('keyToTokenWithUrl', $result['message']);
+        $this->assertArrayNotHasKey('url', $result);
+        $this->assertNotEmpty($result['token']['accessToken']);
+        $this->assertSame(42, $this->refreshTokenService->validate($result['token']['refreshToken']));
         $this->refreshTokenService->delete($result['token']['refreshToken']);
     }
 
