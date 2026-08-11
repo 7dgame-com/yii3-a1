@@ -20,6 +20,12 @@ return [
             $params['db']['password'],
         );
         $schemaCache = new SchemaCache($psrCache);
+
+        // Keep this authentication-facing connection free of query logging
+        // and profiling. LoginCodeStore's redis-first compatibility lookup
+        // binds bearer-equivalent legacy code material; any future debug or
+        // observability integration must redact those parameters before it
+        // decorates this connection.
         return new Connection($driver, $schemaCache);
     },
 ];
