@@ -38,6 +38,14 @@ return [
         ->action([AuthController::class, 'keyToToken'])
         ->name('v1.auth.key-to-token'),
 
+    Route::post('/v1/auth/key-to-token-with-url')
+        ->action([AuthController::class, 'keyToTokenWithUrl'])
+        ->name('v1.auth.key-to-token-with-url'),
+
+    Route::post('/v1/auth/login-code-context')
+        ->action([AuthController::class, 'loginCodeContext'])
+        ->name('v1.auth.login-code-context'),
+
     // =========================================================================
     // V1 Server Routes
     // =========================================================================

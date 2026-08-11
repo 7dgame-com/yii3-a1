@@ -7,7 +7,10 @@ namespace App\Tests\Unit\Controller\V1;
 use App\Controller\V1\AuthController;
 use App\Service\AuthService;
 use App\Service\JwtService;
+use App\Service\LoginCodeSettings;
+use App\Service\LoginCodeStore;
 use App\Service\RefreshTokenService;
+use App\Tests\Support\RedisTestClientFactory;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
@@ -71,13 +74,11 @@ final class AuthControllerTest extends TestCase
 
         $jwtService = new JwtService($kf);
 
-        $rh = getenv('REDIS_HOST') ?: '127.0.0.1';
-        $rp = (int) (getenv('REDIS_PORT') ?: 6379);
-        $rd = (int) (getenv('REDIS_DB') ?: 1);
-        $redis = new \Predis\Client(['scheme' => 'tcp', 'host' => $rh, 'port' => $rp, 'database' => $rd]);
+        $redis = RedisTestClientFactory::create();
 
         $this->refreshTokenService = new RefreshTokenService($redis);
-        $this->authService = new AuthService($jwtService, $this->refreshTokenService);
+        $loginCodeStore = new LoginCodeStore($redis, new LoginCodeSettings());
+        $this->authService = new AuthService($jwtService, $this->refreshTokenService, $loginCodeStore);
 
         $this->responseFactory = $this->createMock(ResponseFactoryInterface::class);
         $this->streamFactory = $this->createMock(StreamFactoryInterface::class);
@@ -213,6 +214,30 @@ final class AuthControllerTest extends TestCase
         $this->controller->refresh($this->req(['refreshToken' => $t]));
         $this->assertSame(401, $sc2);
         $this->refreshTokenService->delete($nt);
+    }
+
+    public function testLoginCodeContextRequiresKey(): void
+    {
+        $b = null;
+        $sc = null;
+        $this->errResp($b, $sc);
+
+        $this->controller->loginCodeContext($this->req([]));
+
+        $this->assertSame(400, $sc);
+        $this->assertSame('key is required', json_decode((string) $b, true)['message']);
+    }
+
+    public function testKeyToTokenWithUrlRequiresKey(): void
+    {
+        $b = null;
+        $sc = null;
+        $this->errResp($b, $sc);
+
+        $this->controller->keyToTokenWithUrl($this->req([]));
+
+        $this->assertSame(400, $sc);
+        $this->assertSame('key is required', json_decode((string) $b, true)['message']);
     }
 
     private function req(array $body): ServerRequestInterface
