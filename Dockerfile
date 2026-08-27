@@ -1,5 +1,10 @@
 FROM php:8.4-cli
 
+ARG YII_ENV=production
+ARG UNITY_DEV_LOGIN_FIXTURE_ENABLED=false
+ENV YII_ENV=${YII_ENV} \
+    UNITY_DEV_LOGIN_FIXTURE_ENABLED=${UNITY_DEV_LOGIN_FIXTURE_ENABLED}
+
 # System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libzip-dev unzip git \

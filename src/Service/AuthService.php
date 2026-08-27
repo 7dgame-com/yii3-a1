@@ -25,6 +25,7 @@ final class AuthService
         private JwtService $jwtService,
         private RefreshTokenService $refreshTokenService,
         private LoginCodeStore $loginCodeStore,
+        private ?UnityDevLoginFixture $unityDevLoginFixture = null,
     ) {
     }
 
@@ -182,14 +183,19 @@ final class AuthService
      *     message: string,
      *     nickname: mixed,
      *     token: array{accessToken: string, expires: string, refreshToken: string},
-     *     user: User,
+     *     user: User|array{id: int, username: string, nickname: string, fixture: true},
      *     url?: string
      * }
      */
     public function keyToTokenWithUrl(string $key): array
     {
+        $normalizedKey = $this->normalizeRefreshTokenInput($key);
+        if ($this->unityDevLoginFixture?->matches($normalizedKey) === true) {
+            return $this->unityDevLoginFixture->exchangeResponse();
+        }
+
         $loginCode = $this->loginCodeStore->resolveForKeyToToken(
-            $this->normalizeRefreshTokenInput($key),
+            $normalizedKey,
         );
 
         if ($loginCode->isInfrastructureFailure()) {
@@ -236,8 +242,13 @@ final class AuthService
      */
     public function loginCodeContext(string $key): array
     {
+        $normalizedKey = $this->normalizeRefreshTokenInput($key);
+        if ($this->unityDevLoginFixture?->matches($normalizedKey) === true) {
+            return $this->unityDevLoginFixture->contextResponse();
+        }
+
         $loginCode = $this->loginCodeStore->resolveForContext(
-            $this->normalizeRefreshTokenInput($key),
+            $normalizedKey,
         );
 
         if ($loginCode->isInfrastructureFailure()) {
