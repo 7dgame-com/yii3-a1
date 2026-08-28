@@ -38,8 +38,16 @@ final class AuthServiceTest extends TestCase
     protected function setUp(): void
     {
         $command = $this->createMock(CommandInterface::class);
-        $command->method('queryOne')->willReturn(['id' => 42, 'nickname' => 'testuser']);
-        $command->method('queryAll')->willReturn([['id' => 42, 'nickname' => 'testuser']]);
+        $command->method('queryOne')->willReturn([
+            'id' => 42,
+            'username' => 'test-user',
+            'nickname' => 'testuser',
+        ]);
+        $command->method('queryAll')->willReturn([[
+            'id' => 42,
+            'username' => 'test-user',
+            'nickname' => 'testuser',
+        ]]);
 
         $quoter = $this->createMock(QuoterInterface::class);
         $quoter->method('quoteTableName')->willReturnCallback(fn($n) => "`$n`");
@@ -51,7 +59,11 @@ final class AuthServiceTest extends TestCase
         $col->method('phpTypecast')->willReturnCallback(fn($v) => $v);
 
         $tableSchema = $this->createMock(TableSchemaInterface::class);
-        $tableSchema->method('getColumns')->willReturn(['id' => $col, 'nickname' => $col]);
+        $tableSchema->method('getColumns')->willReturn([
+            'id' => $col,
+            'username' => $col,
+            'nickname' => $col,
+        ]);
         $tableSchema->method('getColumn')->willReturn($col);
 
         $schema = $this->createMock(SchemaInterface::class);
@@ -86,6 +98,9 @@ final class AuthServiceTest extends TestCase
         $result = $authService->refresh($oldRefreshToken);
         $this->assertTrue($result['success']);
         $this->assertSame('refresh', $result['message']);
+        $this->assertSame(['success', 'message', 'nickname', 'token'], array_keys($result));
+        $this->assertArrayNotHasKey('user', $result);
+        $this->assertArrayNotHasKey('url', $result);
         $this->assertArrayHasKey('nickname', $result);
         $this->assertArrayHasKey('token', $result);
         $this->assertNotEmpty($result['token']['accessToken']);
@@ -117,7 +132,16 @@ final class AuthServiceTest extends TestCase
             $newRefreshToken = $result['token']['refreshToken'];
 
             $this->assertTrue($result['success']);
-            $this->assertSame('refresh', $result['message']);
+            $this->assertSame('keyToTokenWithUrl', $result['message']);
+            $this->assertSame(
+                ['success', 'message', 'nickname', 'token', 'user'],
+                array_keys($result),
+            );
+            $this->assertSame(
+                ['id' => 42, 'username' => 'test-user', 'nickname' => 'testuser', 'fixture' => false],
+                $result['user'],
+            );
+            $this->assertArrayNotHasKey('url', $result);
             $this->assertNotSame($oldRefreshToken, $newRefreshToken);
             $this->assertNull($this->refreshTokenService->validate($oldRefreshToken));
             $this->assertSame(42, $this->refreshTokenService->validate($newRefreshToken));
@@ -281,9 +305,16 @@ final class AuthServiceTest extends TestCase
                 $issuedRefreshTokens[] = $result['token']['refreshToken'];
 
                 $this->assertTrue($result['success']);
-                $this->assertSame('loginCode', $result['message']);
+                $this->assertSame('keyToTokenWithUrl', $result['message']);
+                $this->assertSame(
+                    ['success', 'message', 'nickname', 'token', 'user', 'url'],
+                    array_keys($result),
+                );
                 $this->assertSame('https://d.dev.xrugc.com', $result['url']);
-                $this->assertSame(42, (int) $result['user']->get('id'));
+                $this->assertSame(
+                    ['id' => 42, 'username' => 'test-user', 'nickname' => 'testuser', 'fixture' => false],
+                    $result['user'],
+                );
                 $this->assertSame(42, $this->jwtService->parseToken($result['token']['accessToken'])['user_id'] ?? null);
                 $this->assertSame(42, $this->refreshTokenService->validate($result['token']['refreshToken']));
             }
@@ -332,7 +363,11 @@ final class AuthServiceTest extends TestCase
         $result = $authService->loginCodeOnly('https://example.invalid/?web_' . $rawKey);
 
         $this->assertTrue($result['success']);
-        $this->assertSame('loginCode', $result['message']);
+        $this->assertSame('keyToTokenWithUrl', $result['message']);
+        $this->assertSame(
+            ['success', 'message', 'nickname', 'token', 'user', 'url'],
+            array_keys($result),
+        );
         $this->assertSame('https://d.dev.xrugc.com', $result['url']);
         $this->assertSame(UnityDevLoginFixture::USER_ID, $result['user']['id']);
         $this->assertTrue($result['user']['fixture']);
@@ -341,7 +376,7 @@ final class AuthServiceTest extends TestCase
         $this->assertSame([], $loginCodeRedis->getKeys);
     }
 
-    public function testLoginCodeOnlyOmitsUrlForCompatibleCodeWithoutFrontendDomain(): void
+    public function testLoginCodeOnlyReturnsNullUrlForCompatibleCodeWithoutFrontendDomain(): void
     {
         $rawCode = bin2hex(random_bytes(32));
         $loginCodeStore = new LoginCodeStore(
@@ -364,8 +399,9 @@ final class AuthServiceTest extends TestCase
             $issuedRefreshToken = $result['token']['refreshToken'];
 
             $this->assertTrue($result['success']);
-            $this->assertSame('loginCode', $result['message']);
-            $this->assertArrayNotHasKey('url', $result);
+            $this->assertSame('keyToTokenWithUrl', $result['message']);
+            $this->assertArrayHasKey('url', $result);
+            $this->assertNull($result['url']);
         } finally {
             if (is_string($issuedRefreshToken)) {
                 $this->refreshTokenService->delete($issuedRefreshToken);

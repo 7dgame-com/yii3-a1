@@ -84,8 +84,7 @@ final class AuthService
     public function refresh(string $refreshToken): array
     {
         $normalizedToken = $this->normalizeRefreshTokenInput($refreshToken);
-        $userId = $this->refreshTokenService->validate($normalizedToken);
-        $deleteConsumedRefreshToken = true;
+        $userId = $this->refreshTokenService->consume($normalizedToken);
 
         if ($userId === null) {
             $loginCode = $this->loginCodeStore->resolve($normalizedToken);
@@ -95,17 +94,11 @@ final class AuthService
 
             if ($loginCode->status === LoginCodeLookupStatus::HIT) {
                 $userId = $loginCode->userId;
-                $deleteConsumedRefreshToken = false;
             }
         }
 
         if ($userId === null || $userId <= 0) {
             throw new RuntimeException('Refresh token is invalid.', 401);
-        }
-
-        if ($deleteConsumedRefreshToken) {
-            // Delete the old refresh token
-            $this->refreshTokenService->delete($normalizedToken);
         }
 
         return $this->createRefreshResponse($userId);
@@ -120,15 +113,13 @@ final class AuthService
     public function refreshTokenOnly(string $refreshToken): array
     {
         $normalizedToken = trim($refreshToken);
-        $userId = $this->refreshTokenService->validate($normalizedToken);
+        $userId = $this->refreshTokenService->consume($normalizedToken);
 
         if ($userId === null || $userId <= 0) {
             throw new RuntimeException('Refresh token is invalid.', 401);
         }
 
-        $this->refreshTokenService->delete($normalizedToken);
-
-        return $this->createRefreshResponse($userId);
+        return $this->createStrictRefreshResponse($userId);
     }
 
     /**
@@ -142,9 +133,11 @@ final class AuthService
     {
         return $this->exchangeLoginCodeWithUrl(
             $loginCode,
-            'loginCode',
+            'keyToTokenWithUrl',
             'Login code is invalid or expired.',
             401,
+            false,
+            true,
         );
     }
 
@@ -272,7 +265,7 @@ final class AuthService
     }
 
     /**
-     * @return array{success: true, message: string, nickname: mixed, token: array, user: User|array, url?: string}
+     * @return array{success: true, message: string, nickname: mixed, token: array, user: User|array, url?: string|null}
      */
     private function exchangeLoginCodeWithUrl(
         string $rawLoginCode,
@@ -280,6 +273,7 @@ final class AuthService
         string $invalidMessage,
         int $invalidStatus,
         bool $legacyTelemetrySource = false,
+        bool $uniformResponse = false,
     ): array {
         $normalizedCode = $this->normalizeRefreshTokenInput($rawLoginCode);
         if ($this->unityDevLoginFixture?->matches($normalizedCode) === true) {
@@ -319,11 +313,13 @@ final class AuthService
             'message' => $message,
             'nickname' => $user->get('nickname') ?? '',
             'token' => $this->generateTokenPair($userId),
-            'user' => $user,
+            'user' => $uniformResponse ? $this->createClientUser($user) : $user,
         ];
 
         if ($loginCode->frontendDomain !== null) {
             $result['url'] = $this->buildFrontendUrl($loginCode->frontendDomain);
+        } elseif ($uniformResponse) {
+            $result['url'] = null;
         }
 
         return $result;
@@ -345,6 +341,42 @@ final class AuthService
             'message' => 'refresh',
             'nickname' => $user->get('nickname') ?? '',
             'token' => $this->generateTokenPair($userId),
+        ];
+    }
+
+    /**
+     * Build the strict refresh success envelope. It deliberately has no URL;
+     * white-label routing belongs to the login-code exchange response.
+     *
+     * @return array{success: true, message: string, nickname: mixed, token: array, user: array}
+     */
+    private function createStrictRefreshResponse(int $userId): array
+    {
+        $user = (new ActiveQuery(User::class))
+            ->where(['id' => $userId])
+            ->one();
+
+        if ($user === null) {
+            throw new RuntimeException('User is not found.', 400);
+        }
+
+        return [
+            'success' => true,
+            'message' => 'keyToTokenWithUrl',
+            'nickname' => $user->get('nickname') ?? '',
+            'token' => $this->generateTokenPair($userId),
+            'user' => $this->createClientUser($user),
+        ];
+    }
+
+    /** @return array{id: int, username: string, nickname: string, fixture: false} */
+    private function createClientUser(User $user): array
+    {
+        return [
+            'id' => (int) $user->get('id'),
+            'username' => (string) ($user->get('username') ?? ''),
+            'nickname' => (string) ($user->get('nickname') ?? ''),
+            'fixture' => false,
         ];
     }
 

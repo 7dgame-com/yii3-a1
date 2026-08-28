@@ -96,7 +96,8 @@ final class AuthController
     /**
      * POST /v1/auth/refresh-token
      *
-     * Strictly rotate a genuine refresh token. Login-code fallback and QR
+     * Strictly rotate a genuine refresh token. Returns token and a safe user
+     * projection without white-label URL metadata. Login-code fallback and QR
      * wrapper normalization are intentionally disabled for this endpoint.
      */
     public function refreshToken(ServerRequestInterface $request): ResponseInterface
@@ -120,8 +121,8 @@ final class AuthController
     /**
      * POST /v1/auth/login-code
      *
-     * Strictly exchange a login code for tokens, user data, and its optional
-     * trusted white-label frontend URL.
+     * Strictly exchange a login code for tokens, a safe user projection, and
+     * its trusted white-label frontend URL (null when context is unavailable).
      */
     public function loginCode(ServerRequestInterface $request): ResponseInterface
     {

@@ -41,8 +41,16 @@ final class AuthControllerTest extends TestCase
     protected function setUp(): void
     {
         $command = $this->createMock(CommandInterface::class);
-        $command->method('queryOne')->willReturn(['id' => 42, 'nickname' => 'testuser']);
-        $command->method('queryAll')->willReturn([['id' => 42, 'nickname' => 'testuser']]);
+        $command->method('queryOne')->willReturn([
+            'id' => 42,
+            'username' => 'testuser',
+            'nickname' => 'testuser',
+        ]);
+        $command->method('queryAll')->willReturn([[
+            'id' => 42,
+            'username' => 'testuser',
+            'nickname' => 'testuser',
+        ]]);
 
         $quoter = $this->createMock(QuoterInterface::class);
         $quoter->method('quoteTableName')->willReturnCallback(fn($n) => "`$n`");
@@ -54,7 +62,11 @@ final class AuthControllerTest extends TestCase
         $col->method('phpTypecast')->willReturnCallback(fn($v) => $v);
 
         $tableSchema = $this->createMock(TableSchemaInterface::class);
-        $tableSchema->method('getColumns')->willReturn(['id' => $col, 'nickname' => $col]);
+        $tableSchema->method('getColumns')->willReturn([
+            'id' => $col,
+            'username' => $col,
+            'nickname' => $col,
+        ]);
         $tableSchema->method('getColumn')->willReturn($col);
 
         $schema = $this->createMock(SchemaInterface::class);
@@ -135,13 +147,11 @@ final class AuthControllerTest extends TestCase
         $this->okResp($b);
         $this->controller->refresh($this->req(['refreshToken' => $t]));
         $d = json_decode($b, true);
-        $this->assertArrayHasKey('success', $d);
-        $this->assertArrayHasKey('message', $d);
-        $this->assertArrayHasKey('nickname', $d);
-        $this->assertArrayHasKey('token', $d);
-        $this->assertArrayHasKey('accessToken', $d['token']);
-        $this->assertArrayHasKey('refreshToken', $d['token']);
-        $this->assertArrayHasKey('expires', $d['token']);
+        $this->assertSame(['success', 'message', 'nickname', 'token'], array_keys($d));
+        $this->assertSame('refresh', $d['message']);
+        $this->assertSame(['accessToken', 'expires', 'refreshToken'], array_keys($d['token']));
+        $this->assertArrayNotHasKey('user', $d);
+        $this->assertArrayNotHasKey('url', $d);
         $this->refreshTokenService->delete($d['token']['refreshToken']);
     }
 
@@ -235,7 +245,23 @@ final class AuthControllerTest extends TestCase
             $decoded = json_decode((string) $body, true);
 
             $this->assertTrue($decoded['success']);
-            $this->assertSame('refresh', $decoded['message']);
+            $this->assertSame(
+                ['success', 'message', 'nickname', 'token', 'user'],
+                array_keys($decoded),
+            );
+            $this->assertSame('keyToTokenWithUrl', $decoded['message']);
+            $this->assertSame(['accessToken', 'expires', 'refreshToken'], array_keys($decoded['token']));
+            $this->assertSame(
+                ['id', 'username', 'nickname', 'fixture'],
+                array_keys($decoded['user']),
+            );
+            $this->assertSame([
+                'id' => 42,
+                'username' => 'testuser',
+                'nickname' => 'testuser',
+                'fixture' => false,
+            ], $decoded['user']);
+            $this->assertArrayNotHasKey('url', $decoded);
             $this->assertNotSame($oldRefreshToken, $decoded['token']['refreshToken']);
             $this->assertNull($this->refreshTokenService->validate($oldRefreshToken));
             $this->assertSame(42, $this->refreshTokenService->validate($decoded['token']['refreshToken']));
@@ -298,9 +324,23 @@ final class AuthControllerTest extends TestCase
         $decoded = json_decode((string) $body, true);
 
         $this->assertTrue($decoded['success']);
-        $this->assertSame('loginCode', $decoded['message']);
+        $this->assertSame(
+            ['success', 'message', 'nickname', 'token', 'user', 'url'],
+            array_keys($decoded),
+        );
+        $this->assertSame('keyToTokenWithUrl', $decoded['message']);
+        $this->assertSame(['accessToken', 'expires', 'refreshToken'], array_keys($decoded['token']));
+        $this->assertSame(
+            ['id', 'username', 'nickname', 'fixture'],
+            array_keys($decoded['user']),
+        );
+        $this->assertSame([
+            'id' => UnityDevLoginFixture::USER_ID,
+            'username' => 'unity_dev_fixture',
+            'nickname' => 'Unity Dev Fixture',
+            'fixture' => true,
+        ], $decoded['user']);
         $this->assertSame('https://d.dev.xrugc.com', $decoded['url']);
-        $this->assertTrue($decoded['user']['fixture']);
     }
 
     public function testLoginCodeReturns401ForInvalidCredential(): void

@@ -439,6 +439,8 @@ final class SwaggerControllerTest extends TestCase
         $decoded = json_decode((string) $capturedBody, true, 512, JSON_THROW_ON_ERROR);
         $refresh = $decoded['paths']['/v1/auth/refresh-token']['post'] ?? [];
         $loginCode = $decoded['paths']['/v1/auth/login-code']['post'] ?? [];
+        $coreSuccessFields = ['success', 'message', 'nickname', 'token', 'user'];
+        $loginCodeSuccessFields = [...$coreSuccessFields, 'url'];
 
         $this->assertSame('v1AuthRefreshToken', $refresh['operationId'] ?? null);
         $this->assertSame(
@@ -454,12 +456,8 @@ final class SwaggerControllerTest extends TestCase
         $this->assertArrayHasKey('401', $refresh['responses'] ?? []);
         $this->assertArrayNotHasKey('503', $refresh['responses'] ?? []);
         $this->assertSame(
-            ['success', 'message', 'nickname', 'token'],
+            $coreSuccessFields,
             $refresh['responses']['200']['content']['application/json']['schema']['required'] ?? null,
-        );
-        $this->assertSame(
-            ['accessToken', 'expires', 'refreshToken'],
-            $refresh['responses']['200']['content']['application/json']['schema']['properties']['token']['required'] ?? null,
         );
 
         $this->assertSame('v1AuthLoginCode', $loginCode['operationId'] ?? null);
@@ -476,17 +474,36 @@ final class SwaggerControllerTest extends TestCase
         $this->assertArrayHasKey('401', $loginCode['responses'] ?? []);
         $this->assertArrayHasKey('503', $loginCode['responses'] ?? []);
         $this->assertSame(
-            ['success', 'message', 'nickname', 'token', 'user'],
+            $loginCodeSuccessFields,
             $loginCode['responses']['200']['content']['application/json']['schema']['required'] ?? null,
         );
-        $this->assertArrayHasKey(
-            'url',
-            $loginCode['responses']['200']['content']['application/json']['schema']['properties'] ?? [],
-        );
-        $this->assertNotContains(
-            'url',
-            $loginCode['responses']['200']['content']['application/json']['schema']['required'] ?? [],
-        );
+
+        $refreshSchema = $refresh['responses']['200']['content']['application/json']['schema'] ?? [];
+        $loginCodeSchema = $loginCode['responses']['200']['content']['application/json']['schema'] ?? [];
+
+        $this->assertSame($coreSuccessFields, array_keys($refreshSchema['properties'] ?? []));
+        $this->assertArrayNotHasKey('url', $refreshSchema['properties'] ?? []);
+        $this->assertSame($loginCodeSuccessFields, array_keys($loginCodeSchema['properties'] ?? []));
+
+        foreach ([$refreshSchema, $loginCodeSchema] as $schema) {
+            $this->assertSame(
+                ['accessToken', 'expires', 'refreshToken'],
+                $schema['properties']['token']['required'] ?? null,
+            );
+            $this->assertSame(
+                ['id', 'username', 'nickname', 'fixture'],
+                $schema['properties']['user']['required'] ?? null,
+            );
+            $this->assertSame(
+                ['id', 'username', 'nickname', 'fixture'],
+                array_keys($schema['properties']['user']['properties'] ?? []),
+            );
+            $this->assertSame('keyToTokenWithUrl', $schema['properties']['message']['example'] ?? null);
+        }
+
+        $this->assertSame('string', $loginCodeSchema['properties']['url']['type'] ?? null);
+        $this->assertSame('uri', $loginCodeSchema['properties']['url']['format'] ?? null);
+        $this->assertTrue($loginCodeSchema['properties']['url']['nullable'] ?? false);
     }
 
     /**

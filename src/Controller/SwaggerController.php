@@ -103,10 +103,10 @@ use Psr\Http\Message\StreamFactoryInterface;
             response: 200,
             description: 'Refresh token rotated',
             content: new OA\JsonContent(
-                required: ['success', 'message', 'nickname', 'token'],
+                required: ['success', 'message', 'nickname', 'token', 'user'],
                 properties: [
                     new OA\Property(property: 'success', type: 'boolean', example: true),
-                    new OA\Property(property: 'message', type: 'string', example: 'refresh'),
+                    new OA\Property(property: 'message', type: 'string', example: 'keyToTokenWithUrl'),
                     new OA\Property(property: 'nickname', type: 'string'),
                     new OA\Property(
                         property: 'token',
@@ -115,6 +115,17 @@ use Psr\Http\Message\StreamFactoryInterface;
                             new OA\Property(property: 'accessToken', type: 'string'),
                             new OA\Property(property: 'expires', type: 'string', example: '2026-08-28 12:00:00'),
                             new OA\Property(property: 'refreshToken', type: 'string'),
+                        ],
+                        type: 'object',
+                    ),
+                    new OA\Property(
+                        property: 'user',
+                        required: ['id', 'username', 'nickname', 'fixture'],
+                        properties: [
+                            new OA\Property(property: 'id', type: 'integer'),
+                            new OA\Property(property: 'username', type: 'string'),
+                            new OA\Property(property: 'nickname', type: 'string'),
+                            new OA\Property(property: 'fixture', type: 'boolean', example: false),
                         ],
                         type: 'object',
                     ),
@@ -151,10 +162,10 @@ use Psr\Http\Message\StreamFactoryInterface;
             response: 200,
             description: 'Authenticated with a login code',
             content: new OA\JsonContent(
-                required: ['success', 'message', 'nickname', 'token', 'user'],
+                required: ['success', 'message', 'nickname', 'token', 'user', 'url'],
                 properties: [
                     new OA\Property(property: 'success', type: 'boolean', example: true),
-                    new OA\Property(property: 'message', type: 'string', example: 'loginCode'),
+                    new OA\Property(property: 'message', type: 'string', example: 'keyToTokenWithUrl'),
                     new OA\Property(property: 'nickname', type: 'string'),
                     new OA\Property(
                         property: 'token',
@@ -166,12 +177,23 @@ use Psr\Http\Message\StreamFactoryInterface;
                         ],
                         type: 'object',
                     ),
-                    new OA\Property(property: 'user', type: 'object'),
+                    new OA\Property(
+                        property: 'user',
+                        required: ['id', 'username', 'nickname', 'fixture'],
+                        properties: [
+                            new OA\Property(property: 'id', type: 'integer'),
+                            new OA\Property(property: 'username', type: 'string'),
+                            new OA\Property(property: 'nickname', type: 'string'),
+                            new OA\Property(property: 'fixture', type: 'boolean', example: false),
+                        ],
+                        type: 'object',
+                    ),
                     new OA\Property(
                         property: 'url',
-                        description: 'Present only when the login code contains a trusted frontend domain.',
+                        description: 'Always present. HTTPS URL derived from the trusted login-code domain, or null when the code has no domain context.',
                         type: 'string',
                         format: 'uri',
+                        nullable: true,
                         example: 'https://d.dev.xrugc.com',
                     ),
                 ],
