@@ -14,6 +14,8 @@ use Yiisoft\ActiveRecord\ActiveQuery;
  * Coordinates JwtService and RefreshTokenService to provide:
  * - login: validate credentials and generate token pair
  * - refresh: rotate refresh tokens and generate new token pair
+ * - refreshTokenOnly: strictly rotate a refresh token without login-code fallback
+ * - loginCodeOnly: strictly exchange a login code for tokens and white-label URL
  * - keyToToken: authenticate via a short-lived login code and generate token pair
  * - keyToTokenWithUrl: generate a token pair plus its trusted frontend URL
  *
@@ -106,20 +108,44 @@ final class AuthService
             $this->refreshTokenService->delete($normalizedToken);
         }
 
-        $user = (new ActiveQuery(User::class))
-            ->where(['id' => $userId])
-            ->one();
+        return $this->createRefreshResponse($userId);
+    }
 
-        if ($user === null) {
-            throw new RuntimeException('User is not found.', 400);
+    /**
+     * Strictly rotate a real refresh token.
+     *
+     * Unlike the legacy refresh() entrypoint, this method deliberately does
+     * not unwrap QR transport formats and never falls back to LoginCodeStore.
+     */
+    public function refreshTokenOnly(string $refreshToken): array
+    {
+        $normalizedToken = trim($refreshToken);
+        $userId = $this->refreshTokenService->validate($normalizedToken);
+
+        if ($userId === null || $userId <= 0) {
+            throw new RuntimeException('Refresh token is invalid.', 401);
         }
 
-        return [
-            'success' => true,
-            'message' => 'refresh',
-            'nickname' => $user->get('nickname') ?? '',
-            'token' => $this->generateTokenPair($userId),
-        ];
+        $this->refreshTokenService->delete($normalizedToken);
+
+        return $this->createRefreshResponse($userId);
+    }
+
+    /**
+     * Strictly exchange a login code for a token pair and white-label URL.
+     *
+     * QR transport wrappers such as web_<code> remain accepted because they
+     * represent the same login-code credential type. Refresh tokens are never
+     * inspected or consumed by this path.
+     */
+    public function loginCodeOnly(string $loginCode): array
+    {
+        return $this->exchangeLoginCodeWithUrl(
+            $loginCode,
+            'loginCode',
+            'Login code is invalid or expired.',
+            401,
+        );
     }
 
     /**
@@ -189,49 +215,13 @@ final class AuthService
      */
     public function keyToTokenWithUrl(string $key): array
     {
-        $normalizedKey = $this->normalizeRefreshTokenInput($key);
-        if ($this->unityDevLoginFixture?->matches($normalizedKey) === true) {
-            return $this->unityDevLoginFixture->exchangeResponse();
-        }
-
-        $loginCode = $this->loginCodeStore->resolveForKeyToToken(
-            $normalizedKey,
+        return $this->exchangeLoginCodeWithUrl(
+            $key,
+            'keyToTokenWithUrl',
+            'Linked key is invalid.',
+            400,
+            true,
         );
-
-        if ($loginCode->isInfrastructureFailure()) {
-            throw new RuntimeException('Login code storage is unavailable.', 503);
-        }
-
-        if ($loginCode->status !== LoginCodeLookupStatus::HIT || $loginCode->userId === null) {
-            throw new RuntimeException('Linked key is invalid.', 400);
-        }
-
-        $userId = $loginCode->userId;
-        if ($userId <= 0) {
-            throw new RuntimeException('User is not found.', 400);
-        }
-
-        $user = (new ActiveQuery(User::class))
-            ->where(['id' => $userId])
-            ->one();
-
-        if ($user === null) {
-            throw new RuntimeException('User is not found.', 400);
-        }
-
-        $result = [
-            'success' => true,
-            'message' => 'keyToTokenWithUrl',
-            'nickname' => $user->get('nickname') ?? '',
-            'token' => $this->generateTokenPair($userId),
-            'user' => $user,
-        ];
-
-        if ($loginCode->frontendDomain !== null) {
-            $result['url'] = $this->buildFrontendUrl($loginCode->frontendDomain);
-        }
-
-        return $result;
     }
 
     /**
@@ -279,6 +269,83 @@ final class AuthService
         }
 
         return $token;
+    }
+
+    /**
+     * @return array{success: true, message: string, nickname: mixed, token: array, user: User|array, url?: string}
+     */
+    private function exchangeLoginCodeWithUrl(
+        string $rawLoginCode,
+        string $message,
+        string $invalidMessage,
+        int $invalidStatus,
+        bool $legacyTelemetrySource = false,
+    ): array {
+        $normalizedCode = $this->normalizeRefreshTokenInput($rawLoginCode);
+        if ($this->unityDevLoginFixture?->matches($normalizedCode) === true) {
+            $result = $this->unityDevLoginFixture->exchangeResponse();
+            $result['message'] = $message;
+
+            return $result;
+        }
+
+        $loginCode = $legacyTelemetrySource
+            ? $this->loginCodeStore->resolveForKeyToToken($normalizedCode)
+            : $this->loginCodeStore->resolveForLoginCode($normalizedCode);
+
+        if ($loginCode->isInfrastructureFailure()) {
+            throw new RuntimeException('Login code storage is unavailable.', 503);
+        }
+
+        if ($loginCode->status !== LoginCodeLookupStatus::HIT || $loginCode->userId === null) {
+            throw new RuntimeException($invalidMessage, $invalidStatus);
+        }
+
+        $userId = $loginCode->userId;
+        if ($userId <= 0) {
+            throw new RuntimeException('User is not found.', 400);
+        }
+
+        $user = (new ActiveQuery(User::class))
+            ->where(['id' => $userId])
+            ->one();
+
+        if ($user === null) {
+            throw new RuntimeException('User is not found.', 400);
+        }
+
+        $result = [
+            'success' => true,
+            'message' => $message,
+            'nickname' => $user->get('nickname') ?? '',
+            'token' => $this->generateTokenPair($userId),
+            'user' => $user,
+        ];
+
+        if ($loginCode->frontendDomain !== null) {
+            $result['url'] = $this->buildFrontendUrl($loginCode->frontendDomain);
+        }
+
+        return $result;
+    }
+
+    /** @return array{success: true, message: string, nickname: mixed, token: array} */
+    private function createRefreshResponse(int $userId): array
+    {
+        $user = (new ActiveQuery(User::class))
+            ->where(['id' => $userId])
+            ->one();
+
+        if ($user === null) {
+            throw new RuntimeException('User is not found.', 400);
+        }
+
+        return [
+            'success' => true,
+            'message' => 'refresh',
+            'nickname' => $user->get('nickname') ?? '',
+            'token' => $this->generateTokenPair($userId),
+        ];
     }
 
     /**

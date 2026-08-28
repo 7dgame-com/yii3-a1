@@ -34,6 +34,14 @@ return [
         ->action([AuthController::class, 'refresh'])
         ->name('v1.auth.refresh'),
 
+    Route::post('/v1/auth/refresh-token')
+        ->action([AuthController::class, 'refreshToken'])
+        ->name('v1.auth.refresh-token'),
+
+    Route::post('/v1/auth/login-code')
+        ->action([AuthController::class, 'loginCode'])
+        ->name('v1.auth.login-code'),
+
     Route::post('/v1/auth/key-to-token')
         ->action([AuthController::class, 'keyToToken'])
         ->name('v1.auth.key-to-token'),

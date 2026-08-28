@@ -64,7 +64,9 @@ php -S 0.0.0.0:8080 -t public
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/v1/auth/login` | 用户名密码登录，返回 accessToken + refreshToken |
-| POST | `/v1/auth/refresh` | 刷新令牌 |
+| POST | `/v1/auth/refresh` | 兼容入口：接受 refreshToken，也兼容有效 loginCode |
+| POST | `/v1/auth/refresh-token` | 严格使用 refreshToken 刷新并轮换令牌 |
+| POST | `/v1/auth/login-code` | 严格使用 loginCode 登录，返回令牌及可选白牌 URL |
 | POST | `/v1/auth/key-to-token` | 关联 key 换取令牌 |
 | POST | `/v1/auth/key-to-token-with-url` | 关联 key 换取令牌，并在有域名上下文时返回前端 URL |
 

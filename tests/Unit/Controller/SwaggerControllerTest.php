@@ -397,6 +397,8 @@ final class SwaggerControllerTest extends TestCase
 
         $this->assertContains('/v1/auth/login', $paths);
         $this->assertContains('/v1/auth/refresh', $paths);
+        $this->assertContains('/v1/auth/refresh-token', $paths);
+        $this->assertContains('/v1/auth/login-code', $paths);
         $this->assertContains('/v1/auth/key-to-token', $paths);
         $this->assertContains('/v1/auth/key-to-token-with-url', $paths);
         $this->assertContains('/v1/auth/login-code-context', $paths);
@@ -414,6 +416,77 @@ final class SwaggerControllerTest extends TestCase
         $this->assertContains('/health', $paths);
         $this->assertContains('/swagger', $paths);
         $this->assertContains('/swagger/json-schema', $paths);
+    }
+
+    public function testJsonSchemaDefinesStrictCredentialEndpointContracts(): void
+    {
+        $controller = new SwaggerController(
+            $this->responseFactory,
+            $this->streamFactory,
+            'admin',
+            'secret',
+        );
+
+        $capturedBody = null;
+        $capturedStatusCode = null;
+        $capturedHeaders = [];
+        $this->setupResponseCaptureWithBody($capturedBody, $capturedStatusCode, $capturedHeaders);
+
+        $controller->jsonSchema(
+            $this->createRequestWithAuth('Basic ' . base64_encode('admin:secret')),
+        );
+
+        $decoded = json_decode((string) $capturedBody, true, 512, JSON_THROW_ON_ERROR);
+        $refresh = $decoded['paths']['/v1/auth/refresh-token']['post'] ?? [];
+        $loginCode = $decoded['paths']['/v1/auth/login-code']['post'] ?? [];
+
+        $this->assertSame('v1AuthRefreshToken', $refresh['operationId'] ?? null);
+        $this->assertSame(
+            ['refreshToken'],
+            $refresh['requestBody']['content']['application/json']['schema']['required'] ?? null,
+        );
+        $this->assertSame(
+            ['refreshToken'],
+            array_keys($refresh['requestBody']['content']['application/json']['schema']['properties'] ?? []),
+        );
+        $this->assertArrayHasKey('200', $refresh['responses'] ?? []);
+        $this->assertArrayHasKey('400', $refresh['responses'] ?? []);
+        $this->assertArrayHasKey('401', $refresh['responses'] ?? []);
+        $this->assertArrayNotHasKey('503', $refresh['responses'] ?? []);
+        $this->assertSame(
+            ['success', 'message', 'nickname', 'token'],
+            $refresh['responses']['200']['content']['application/json']['schema']['required'] ?? null,
+        );
+        $this->assertSame(
+            ['accessToken', 'expires', 'refreshToken'],
+            $refresh['responses']['200']['content']['application/json']['schema']['properties']['token']['required'] ?? null,
+        );
+
+        $this->assertSame('v1AuthLoginCode', $loginCode['operationId'] ?? null);
+        $this->assertSame(
+            ['loginCode'],
+            $loginCode['requestBody']['content']['application/json']['schema']['required'] ?? null,
+        );
+        $this->assertSame(
+            ['loginCode'],
+            array_keys($loginCode['requestBody']['content']['application/json']['schema']['properties'] ?? []),
+        );
+        $this->assertArrayHasKey('200', $loginCode['responses'] ?? []);
+        $this->assertArrayHasKey('400', $loginCode['responses'] ?? []);
+        $this->assertArrayHasKey('401', $loginCode['responses'] ?? []);
+        $this->assertArrayHasKey('503', $loginCode['responses'] ?? []);
+        $this->assertSame(
+            ['success', 'message', 'nickname', 'token', 'user'],
+            $loginCode['responses']['200']['content']['application/json']['schema']['required'] ?? null,
+        );
+        $this->assertArrayHasKey(
+            'url',
+            $loginCode['responses']['200']['content']['application/json']['schema']['properties'] ?? [],
+        );
+        $this->assertNotContains(
+            'url',
+            $loginCode['responses']['200']['content']['application/json']['schema']['required'] ?? [],
+        );
     }
 
     /**

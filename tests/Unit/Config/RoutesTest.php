@@ -52,8 +52,8 @@ final class RoutesTest extends TestCase
 
     public function testTotalRouteCount(): void
     {
-        // 5 auth + 7 server + 1 phototype + 4 v2 + 1 health + 2 swagger = 20
-        $this->assertCount(20, $this->routes);
+        // 7 auth + 7 server + 1 phototype + 4 v2 + 1 health + 2 swagger = 22
+        $this->assertCount(22, $this->routes);
     }
 
     // =========================================================================
@@ -73,6 +73,22 @@ final class RoutesTest extends TestCase
         $route = $this->findRouteByName('v1.auth.refresh');
         $this->assertNotNull($route, 'Route v1.auth.refresh should exist');
         $this->assertSame('/v1/auth/refresh', $route->getData('pattern'));
+        $this->assertSame(['POST'], $route->getData('methods'));
+    }
+
+    public function testV1AuthRefreshTokenRoute(): void
+    {
+        $route = $this->findRouteByName('v1.auth.refresh-token');
+        $this->assertNotNull($route, 'Route v1.auth.refresh-token should exist');
+        $this->assertSame('/v1/auth/refresh-token', $route->getData('pattern'));
+        $this->assertSame(['POST'], $route->getData('methods'));
+    }
+
+    public function testV1AuthLoginCodeRoute(): void
+    {
+        $route = $this->findRouteByName('v1.auth.login-code');
+        $this->assertNotNull($route, 'Route v1.auth.login-code should exist');
+        $this->assertSame('/v1/auth/login-code', $route->getData('pattern'));
         $this->assertSame(['POST'], $route->getData('methods'));
     }
 
@@ -253,6 +269,8 @@ final class RoutesTest extends TestCase
         $publicRouteNames = [
             'v1.auth.login',
             'v1.auth.refresh',
+            'v1.auth.refresh-token',
+            'v1.auth.login-code',
             'v1.auth.key-to-token',
             'v1.auth.key-to-token-with-url',
             'v1.auth.login-code-context',
@@ -315,6 +333,8 @@ final class RoutesTest extends TestCase
         $expectedPaths = [
             '/v1/auth/login',
             '/v1/auth/refresh',
+            '/v1/auth/refresh-token',
+            '/v1/auth/login-code',
             '/v1/auth/key-to-token',
             '/v1/auth/key-to-token-with-url',
             '/v1/auth/login-code-context',
