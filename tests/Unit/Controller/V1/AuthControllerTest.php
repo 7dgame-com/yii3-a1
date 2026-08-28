@@ -10,9 +10,7 @@ use App\Service\JwtService;
 use App\Service\LoginCodeSettings;
 use App\Service\LoginCodeStore;
 use App\Service\RefreshTokenService;
-use App\Service\UnityDevLoginFixture;
 use App\Tests\Support\RedisTestClientFactory;
-use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
@@ -234,140 +232,6 @@ final class AuthControllerTest extends TestCase
         $this->refreshTokenService->delete($nt);
     }
 
-    public function testRefreshTokenReturnsRotatedTokenPair(): void
-    {
-        $oldRefreshToken = $this->refreshTokenService->create(42);
-        $body = null;
-        $this->okResp($body);
-
-        try {
-            $this->controller->refreshToken($this->req(['refreshToken' => $oldRefreshToken]));
-            $decoded = json_decode((string) $body, true);
-
-            $this->assertTrue($decoded['success']);
-            $this->assertSame(
-                ['success', 'message', 'nickname', 'token', 'user'],
-                array_keys($decoded),
-            );
-            $this->assertSame('keyToTokenWithUrl', $decoded['message']);
-            $this->assertSame(['accessToken', 'expires', 'refreshToken'], array_keys($decoded['token']));
-            $this->assertSame(
-                ['id', 'username', 'nickname', 'fixture'],
-                array_keys($decoded['user']),
-            );
-            $this->assertSame([
-                'id' => 42,
-                'username' => 'testuser',
-                'nickname' => 'testuser',
-                'fixture' => false,
-            ], $decoded['user']);
-            $this->assertArrayNotHasKey('url', $decoded);
-            $this->assertNotSame($oldRefreshToken, $decoded['token']['refreshToken']);
-            $this->assertNull($this->refreshTokenService->validate($oldRefreshToken));
-            $this->assertSame(42, $this->refreshTokenService->validate($decoded['token']['refreshToken']));
-        } finally {
-            $this->refreshTokenService->delete($oldRefreshToken);
-            if (isset($decoded['token']['refreshToken']) && is_string($decoded['token']['refreshToken'])) {
-                $this->refreshTokenService->delete($decoded['token']['refreshToken']);
-            }
-        }
-    }
-
-    public function testRefreshTokenReturns401ForInvalidCredential(): void
-    {
-        $body = null;
-        $statusCode = null;
-        $this->errResp($body, $statusCode);
-
-        $this->controller->refreshToken($this->req(['refreshToken' => str_repeat('a', 64)]));
-
-        $this->assertSame(401, $statusCode);
-        $this->assertSame('Refresh token is invalid.', json_decode((string) $body, true)['message']);
-    }
-
-    #[DataProvider('invalidRefreshTokenRequestBodies')]
-    public function testRefreshTokenRequiresOnlyANonEmptyStringRefreshToken(array $requestBody): void
-    {
-        $body = null;
-        $statusCode = null;
-        $this->errResp($body, $statusCode);
-
-        $this->controller->refreshToken($this->req($requestBody));
-
-        $this->assertSame(400, $statusCode);
-        $this->assertSame(400, json_decode((string) $body, true)['status']);
-    }
-
-    public function testLoginCodeReturnsUnityWhiteLabelResponse(): void
-    {
-        $rawKey = 'unity-controller-test-key-000000000000000000001';
-        $fixture = new UnityDevLoginFixture(
-            enabled: true,
-            environment: 'dev',
-            keySha256: hash('sha256', $rawKey),
-        );
-        $this->authService = new AuthService(
-            $this->jwtService,
-            $this->refreshTokenService,
-            $this->loginCodeStore,
-            $fixture,
-        );
-        $this->controller = new AuthController(
-            $this->authService,
-            $this->responseFactory,
-            $this->streamFactory,
-        );
-        $body = null;
-        $this->okResp($body);
-
-        $this->controller->loginCode($this->req(['loginCode' => 'web_' . $rawKey]));
-        $decoded = json_decode((string) $body, true);
-
-        $this->assertTrue($decoded['success']);
-        $this->assertSame(
-            ['success', 'message', 'nickname', 'token', 'user', 'url'],
-            array_keys($decoded),
-        );
-        $this->assertSame('keyToTokenWithUrl', $decoded['message']);
-        $this->assertSame(['accessToken', 'expires', 'refreshToken'], array_keys($decoded['token']));
-        $this->assertSame(
-            ['id', 'username', 'nickname', 'fixture'],
-            array_keys($decoded['user']),
-        );
-        $this->assertSame([
-            'id' => UnityDevLoginFixture::USER_ID,
-            'username' => 'unity_dev_fixture',
-            'nickname' => 'Unity Dev Fixture',
-            'fixture' => true,
-        ], $decoded['user']);
-        $this->assertSame('https://d.dev.xrugc.com', $decoded['url']);
-    }
-
-    public function testLoginCodeReturns401ForInvalidCredential(): void
-    {
-        $body = null;
-        $statusCode = null;
-        $this->errResp($body, $statusCode);
-
-        $this->controller->loginCode($this->req(['loginCode' => 'invalid-login-code']));
-
-        $this->assertSame(401, $statusCode);
-        $this->assertSame('Login code is invalid or expired.', json_decode((string) $body, true)['message']);
-    }
-
-    #[DataProvider('invalidLoginCodeRequestBodies')]
-    public function testLoginCodeRequiresOnlyANonEmptyStringLoginCode(array $requestBody): void
-    {
-        $body = null;
-        $statusCode = null;
-        $this->errResp($body, $statusCode);
-
-        $this->controller->loginCode($this->req($requestBody));
-
-        $this->assertSame(400, $statusCode);
-        $this->assertSame(400, json_decode((string) $body, true)['status']);
-    }
-
     public function testLoginCodeContextRequiresKey(): void
     {
         $b = null;
@@ -390,30 +254,6 @@ final class AuthControllerTest extends TestCase
 
         $this->assertSame(400, $sc);
         $this->assertSame('key is required', json_decode((string) $b, true)['message']);
-    }
-
-    public static function invalidRefreshTokenRequestBodies(): array
-    {
-        return [
-            'missing field' => [[]],
-            'wrong credential field' => [['loginCode' => str_repeat('a', 64)]],
-            'empty string' => [['refreshToken' => '']],
-            'whitespace only' => [['refreshToken' => '   ']],
-            'integer' => [['refreshToken' => 123]],
-            'non-empty array' => [['refreshToken' => ['not-a-string']]],
-        ];
-    }
-
-    public static function invalidLoginCodeRequestBodies(): array
-    {
-        return [
-            'missing field' => [[]],
-            'wrong credential field' => [['refreshToken' => str_repeat('a', 64)]],
-            'empty string' => [['loginCode' => '']],
-            'whitespace only' => [['loginCode' => '   ']],
-            'integer' => [['loginCode' => 123]],
-            'non-empty array' => [['loginCode' => ['not-a-string']]],
-        ];
     }
 
     private function req(array $body): ServerRequestInterface

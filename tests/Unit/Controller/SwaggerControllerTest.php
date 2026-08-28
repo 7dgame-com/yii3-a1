@@ -397,8 +397,10 @@ final class SwaggerControllerTest extends TestCase
 
         $this->assertContains('/v1/auth/login', $paths);
         $this->assertContains('/v1/auth/refresh', $paths);
-        $this->assertContains('/v1/auth/refresh-token', $paths);
-        $this->assertContains('/v1/auth/login-code', $paths);
+        $this->assertContains('/v2/auth/refresh-token', $paths);
+        $this->assertContains('/v2/auth/login-code', $paths);
+        $this->assertNotContains('/v1/auth/refresh-token', $paths);
+        $this->assertNotContains('/v1/auth/login-code', $paths);
         $this->assertContains('/v1/auth/key-to-token', $paths);
         $this->assertContains('/v1/auth/key-to-token-with-url', $paths);
         $this->assertContains('/v1/auth/login-code-context', $paths);
@@ -437,12 +439,12 @@ final class SwaggerControllerTest extends TestCase
         );
 
         $decoded = json_decode((string) $capturedBody, true, 512, JSON_THROW_ON_ERROR);
-        $refresh = $decoded['paths']['/v1/auth/refresh-token']['post'] ?? [];
-        $loginCode = $decoded['paths']['/v1/auth/login-code']['post'] ?? [];
+        $refresh = $decoded['paths']['/v2/auth/refresh-token']['post'] ?? [];
+        $loginCode = $decoded['paths']['/v2/auth/login-code']['post'] ?? [];
         $coreSuccessFields = ['success', 'message', 'nickname', 'token', 'user'];
         $loginCodeSuccessFields = [...$coreSuccessFields, 'url'];
 
-        $this->assertSame('v1AuthRefreshToken', $refresh['operationId'] ?? null);
+        $this->assertSame('v2AuthRefreshToken', $refresh['operationId'] ?? null);
         $this->assertSame(
             ['refreshToken'],
             $refresh['requestBody']['content']['application/json']['schema']['required'] ?? null,
@@ -460,7 +462,7 @@ final class SwaggerControllerTest extends TestCase
             $refresh['responses']['200']['content']['application/json']['schema']['required'] ?? null,
         );
 
-        $this->assertSame('v1AuthLoginCode', $loginCode['operationId'] ?? null);
+        $this->assertSame('v2AuthLoginCode', $loginCode['operationId'] ?? null);
         $this->assertSame(
             ['loginCode'],
             $loginCode['requestBody']['content']['application/json']['schema']['required'] ?? null,

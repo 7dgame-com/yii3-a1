@@ -17,8 +17,6 @@ use RuntimeException;
  * Handles user authentication endpoints:
  * - POST /v1/auth/login: Authenticate with username/password
  * - POST /v1/auth/refresh: Refresh token pair using a refresh token
- * - POST /v1/auth/refresh-token: Strictly rotate a refresh token
- * - POST /v1/auth/login-code: Strictly authenticate with a login code
  * - POST /v1/auth/key-to-token: Authenticate via a linked key
  * - POST /v1/auth/key-to-token-with-url: Authenticate and return the originating frontend URL
  * - POST /v1/auth/login-code-context: Read optional white-label metadata
@@ -88,55 +86,6 @@ final class AuthController
             $result = $this->authService->refresh((string) $refreshToken);
 
             return $this->createJsonResponse($result);
-        } catch (RuntimeException $e) {
-            return $this->createErrorResponse($e->getCode() ?: 400, $e->getMessage());
-        }
-    }
-
-    /**
-     * POST /v1/auth/refresh-token
-     *
-     * Strictly rotate a genuine refresh token. Returns token and a safe user
-     * projection without white-label URL metadata. Login-code fallback and QR
-     * wrapper normalization are intentionally disabled for this endpoint.
-     */
-    public function refreshToken(ServerRequestInterface $request): ResponseInterface
-    {
-        $body = $request->getParsedBody();
-        $refreshToken = is_array($body) ? ($body['refreshToken'] ?? null) : null;
-
-        if (!is_string($refreshToken) || trim($refreshToken) === '') {
-            return $this->createErrorResponse(400, 'refreshToken is required');
-        }
-
-        try {
-            return $this->createJsonResponse(
-                $this->authService->refreshTokenOnly($refreshToken),
-            );
-        } catch (RuntimeException $e) {
-            return $this->createErrorResponse($e->getCode() ?: 400, $e->getMessage());
-        }
-    }
-
-    /**
-     * POST /v1/auth/login-code
-     *
-     * Strictly exchange a login code for tokens, a safe user projection, and
-     * its trusted white-label frontend URL (null when context is unavailable).
-     */
-    public function loginCode(ServerRequestInterface $request): ResponseInterface
-    {
-        $body = $request->getParsedBody();
-        $loginCode = is_array($body) ? ($body['loginCode'] ?? null) : null;
-
-        if (!is_string($loginCode) || trim($loginCode) === '') {
-            return $this->createErrorResponse(400, 'loginCode is required');
-        }
-
-        try {
-            return $this->createJsonResponse(
-                $this->authService->loginCodeOnly($loginCode),
-            );
         } catch (RuntimeException $e) {
             return $this->createErrorResponse($e->getCode() ?: 400, $e->getMessage());
         }

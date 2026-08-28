@@ -79,8 +79,8 @@ use Psr\Http\Message\StreamFactoryInterface;
     ],
 )]
 #[OA\Post(
-    path: '/v1/auth/refresh-token',
-    operationId: 'v1AuthRefreshToken',
+    path: '/v2/auth/refresh-token',
+    operationId: 'v2AuthRefreshToken',
     summary: 'Rotate a genuine refresh token',
     description: 'Accepts only a refresh token issued by this service. Login codes and QR transport wrappers are never resolved by this endpoint.',
     tags: ['Authentication'],
@@ -138,8 +138,8 @@ use Psr\Http\Message\StreamFactoryInterface;
     ],
 )]
 #[OA\Post(
-    path: '/v1/auth/login-code',
-    operationId: 'v1AuthLoginCode',
+    path: '/v2/auth/login-code',
+    operationId: 'v2AuthLoginCode',
     summary: 'Authenticate with a short-lived login code',
     description: 'Accepts only a login code. Bare codes are canonical; existing web_ and QR URL transport forms remain accepted. Refresh-token storage is never queried by this endpoint.',
     tags: ['Authentication'],

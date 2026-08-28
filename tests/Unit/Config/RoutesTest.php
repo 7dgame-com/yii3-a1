@@ -76,20 +76,33 @@ final class RoutesTest extends TestCase
         $this->assertSame(['POST'], $route->getData('methods'));
     }
 
-    public function testV1AuthRefreshTokenRoute(): void
+    public function testV2AuthRefreshTokenRoute(): void
     {
-        $route = $this->findRouteByName('v1.auth.refresh-token');
-        $this->assertNotNull($route, 'Route v1.auth.refresh-token should exist');
-        $this->assertSame('/v1/auth/refresh-token', $route->getData('pattern'));
+        $route = $this->findRouteByName('v2.auth.refresh-token');
+        $this->assertNotNull($route, 'Route v2.auth.refresh-token should exist');
+        $this->assertSame('/v2/auth/refresh-token', $route->getData('pattern'));
         $this->assertSame(['POST'], $route->getData('methods'));
     }
 
-    public function testV1AuthLoginCodeRoute(): void
+    public function testV2AuthLoginCodeRoute(): void
     {
-        $route = $this->findRouteByName('v1.auth.login-code');
-        $this->assertNotNull($route, 'Route v1.auth.login-code should exist');
-        $this->assertSame('/v1/auth/login-code', $route->getData('pattern'));
+        $route = $this->findRouteByName('v2.auth.login-code');
+        $this->assertNotNull($route, 'Route v2.auth.login-code should exist');
+        $this->assertSame('/v2/auth/login-code', $route->getData('pattern'));
         $this->assertSame(['POST'], $route->getData('methods'));
+    }
+
+    public function testV1StrictCredentialRoutesAreNotDefined(): void
+    {
+        $paths = array_map(
+            static fn(Route $route): string => $route->getData('pattern'),
+            $this->routes,
+        );
+
+        $this->assertNotContains('/v1/auth/refresh-token', $paths);
+        $this->assertNotContains('/v1/auth/login-code', $paths);
+        $this->assertNull($this->findRouteByName('v1.auth.refresh-token'));
+        $this->assertNull($this->findRouteByName('v1.auth.login-code'));
     }
 
     public function testV1AuthKeyToTokenRoute(): void
@@ -269,8 +282,8 @@ final class RoutesTest extends TestCase
         $publicRouteNames = [
             'v1.auth.login',
             'v1.auth.refresh',
-            'v1.auth.refresh-token',
-            'v1.auth.login-code',
+            'v2.auth.refresh-token',
+            'v2.auth.login-code',
             'v1.auth.key-to-token',
             'v1.auth.key-to-token-with-url',
             'v1.auth.login-code-context',
@@ -333,8 +346,8 @@ final class RoutesTest extends TestCase
         $expectedPaths = [
             '/v1/auth/login',
             '/v1/auth/refresh',
-            '/v1/auth/refresh-token',
-            '/v1/auth/login-code',
+            '/v2/auth/refresh-token',
+            '/v2/auth/login-code',
             '/v1/auth/key-to-token',
             '/v1/auth/key-to-token-with-url',
             '/v1/auth/login-code-context',
