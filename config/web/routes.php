@@ -87,6 +87,10 @@ return [
     // =========================================================================
     // V2 Routes
     // =========================================================================
+    Route::post('/v2/auth/login')
+        ->action([V2AuthController::class, 'login'])
+        ->name('v2.auth.login'),
+
     Route::post('/v2/auth/refresh-token')
         ->action([V2AuthController::class, 'refreshToken'])
         ->name('v2.auth.refresh-token'),

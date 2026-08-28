@@ -397,6 +397,7 @@ final class SwaggerControllerTest extends TestCase
 
         $this->assertContains('/v1/auth/login', $paths);
         $this->assertContains('/v1/auth/refresh', $paths);
+        $this->assertContains('/v2/auth/login', $paths);
         $this->assertContains('/v2/auth/refresh-token', $paths);
         $this->assertContains('/v2/auth/login-code', $paths);
         $this->assertNotContains('/v1/auth/refresh-token', $paths);
@@ -439,10 +440,28 @@ final class SwaggerControllerTest extends TestCase
         );
 
         $decoded = json_decode((string) $capturedBody, true, 512, JSON_THROW_ON_ERROR);
+        $login = $decoded['paths']['/v2/auth/login']['post'] ?? [];
         $refresh = $decoded['paths']['/v2/auth/refresh-token']['post'] ?? [];
         $loginCode = $decoded['paths']['/v2/auth/login-code']['post'] ?? [];
         $coreSuccessFields = ['success', 'message', 'nickname', 'token', 'user'];
         $loginCodeSuccessFields = [...$coreSuccessFields, 'url'];
+
+        $this->assertSame('v2AuthLogin', $login['operationId'] ?? null);
+        $this->assertSame(
+            ['username', 'password'],
+            $login['requestBody']['content']['application/json']['schema']['required'] ?? null,
+        );
+        $this->assertSame(
+            ['username', 'password'],
+            array_keys($login['requestBody']['content']['application/json']['schema']['properties'] ?? []),
+        );
+        $this->assertArrayHasKey('200', $login['responses'] ?? []);
+        $this->assertArrayHasKey('400', $login['responses'] ?? []);
+        $this->assertArrayHasKey('401', $login['responses'] ?? []);
+        $this->assertSame(
+            $coreSuccessFields,
+            $login['responses']['200']['content']['application/json']['schema']['required'] ?? null,
+        );
 
         $this->assertSame('v2AuthRefreshToken', $refresh['operationId'] ?? null);
         $this->assertSame(
@@ -480,14 +499,17 @@ final class SwaggerControllerTest extends TestCase
             $loginCode['responses']['200']['content']['application/json']['schema']['required'] ?? null,
         );
 
+        $loginSchema = $login['responses']['200']['content']['application/json']['schema'] ?? [];
         $refreshSchema = $refresh['responses']['200']['content']['application/json']['schema'] ?? [];
         $loginCodeSchema = $loginCode['responses']['200']['content']['application/json']['schema'] ?? [];
 
+        $this->assertSame($coreSuccessFields, array_keys($loginSchema['properties'] ?? []));
+        $this->assertArrayNotHasKey('url', $loginSchema['properties'] ?? []);
         $this->assertSame($coreSuccessFields, array_keys($refreshSchema['properties'] ?? []));
         $this->assertArrayNotHasKey('url', $refreshSchema['properties'] ?? []);
         $this->assertSame($loginCodeSuccessFields, array_keys($loginCodeSchema['properties'] ?? []));
 
-        foreach ([$refreshSchema, $loginCodeSchema] as $schema) {
+        foreach ([$loginSchema, $refreshSchema, $loginCodeSchema] as $schema) {
             $this->assertSame(
                 ['accessToken', 'expires', 'refreshToken'],
                 $schema['properties']['token']['required'] ?? null,

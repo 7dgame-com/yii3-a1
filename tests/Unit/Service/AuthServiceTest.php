@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service;
 
+use App\Model\User;
 use App\Service\AuthService;
 use App\Service\JwtService;
 use App\Service\LoginCodeSettings;
@@ -34,20 +35,22 @@ final class AuthServiceTest extends TestCase
     private RefreshTokenService $refreshTokenService;
     private LoginCodeStore $databaseLoginCodeStore;
     private RedisClient $redis;
+    private ?array $userQueryRow;
 
     protected function setUp(): void
     {
+        $this->userQueryRow = [
+            'id' => 42,
+            'username' => 'test-user',
+            'nickname' => 'testuser',
+            'password_hash' => password_hash('correct-password', PASSWORD_DEFAULT),
+        ];
+
         $command = $this->createMock(CommandInterface::class);
-        $command->method('queryOne')->willReturn([
-            'id' => 42,
-            'username' => 'test-user',
-            'nickname' => 'testuser',
-        ]);
-        $command->method('queryAll')->willReturn([[
-            'id' => 42,
-            'username' => 'test-user',
-            'nickname' => 'testuser',
-        ]]);
+        $command->method('queryOne')->willReturnCallback(fn () => $this->userQueryRow);
+        $command->method('queryAll')->willReturnCallback(
+            fn () => $this->userQueryRow === null ? [] : [$this->userQueryRow],
+        );
 
         $quoter = $this->createMock(QuoterInterface::class);
         $quoter->method('quoteTableName')->willReturnCallback(fn($n) => "`$n`");
@@ -63,6 +66,7 @@ final class AuthServiceTest extends TestCase
             'id' => $col,
             'username' => $col,
             'nickname' => $col,
+            'password_hash' => $col,
         ]);
         $tableSchema->method('getColumn')->willReturn($col);
 
@@ -89,6 +93,110 @@ final class AuthServiceTest extends TestCase
         $this->redis = RedisTestClientFactory::create();
         $this->refreshTokenService = new RefreshTokenService($this->redis);
         $this->databaseLoginCodeStore = new LoginCodeStore($this->redis, new LoginCodeSettings());
+    }
+
+    public function testLoginKeepsLegacySuccessEnvelope(): void
+    {
+        $authService = new AuthService($this->jwtService, $this->refreshTokenService, $this->databaseLoginCodeStore);
+        $refreshToken = null;
+
+        try {
+            $result = $authService->login('test-user', 'correct-password');
+            $refreshToken = $result['token']['refreshToken'];
+
+            $this->assertSame(
+                ['success', 'message', 'nickname', 'token', 'user'],
+                array_keys($result),
+            );
+            $this->assertTrue($result['success']);
+            $this->assertSame('login', $result['message']);
+            $this->assertSame('testuser', $result['nickname']);
+            $this->assertInstanceOf(User::class, $result['user']);
+            $this->assertArrayNotHasKey('url', $result);
+        } finally {
+            if (is_string($refreshToken)) {
+                $this->refreshTokenService->delete($refreshToken);
+            }
+        }
+    }
+
+    public function testLoginKeepsLegacyWrongPasswordError(): void
+    {
+        $authService = new AuthService($this->jwtService, $this->refreshTokenService, $this->databaseLoginCodeStore);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionCode(400);
+        $this->expectExceptionMessage('wrong password');
+        $authService->login('test-user', 'wrong-password');
+    }
+
+    public function testLoginKeepsLegacyUnknownUserError(): void
+    {
+        $this->userQueryRow = null;
+        $authService = new AuthService($this->jwtService, $this->refreshTokenService, $this->databaseLoginCodeStore);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionCode(400);
+        $this->expectExceptionMessage('no user');
+        $authService->login('missing-user', 'wrong-password');
+    }
+
+    public function testLoginV2ReturnsStrictRefreshTokenEnvelopeWithSafeUserAndNoUrl(): void
+    {
+        $authService = new AuthService($this->jwtService, $this->refreshTokenService, $this->databaseLoginCodeStore);
+        $refreshToken = null;
+
+        try {
+            $result = $authService->loginV2('test-user', 'correct-password');
+            $refreshToken = $result['token']['refreshToken'];
+
+            $this->assertSame(
+                ['success', 'message', 'nickname', 'token', 'user'],
+                array_keys($result),
+            );
+            $this->assertTrue($result['success']);
+            $this->assertSame('keyToTokenWithUrl', $result['message']);
+            $this->assertSame('testuser', $result['nickname']);
+            $this->assertSame(
+                ['accessToken', 'expires', 'refreshToken'],
+                array_keys($result['token']),
+            );
+            $this->assertSame([
+                'id' => 42,
+                'username' => 'test-user',
+                'nickname' => 'testuser',
+                'fixture' => false,
+            ], $result['user']);
+            $this->assertArrayNotHasKey('password_hash', $result['user']);
+            $this->assertArrayNotHasKey('url', $result);
+            $this->assertSame(42, $this->refreshTokenService->validate($refreshToken));
+            $this->assertSame(42, $this->jwtService->parseToken($result['token']['accessToken'])['user_id'] ?? null);
+        } finally {
+            if (is_string($refreshToken)) {
+                $this->refreshTokenService->delete($refreshToken);
+            }
+        }
+    }
+
+    public function testLoginV2ReturnsGeneric401ForWrongPassword(): void
+    {
+        $authService = new AuthService($this->jwtService, $this->refreshTokenService, $this->databaseLoginCodeStore);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionCode(401);
+        $this->expectExceptionMessage('Invalid username or password.');
+        $authService->loginV2('test-user', 'wrong-password');
+    }
+
+    public function testLoginV2ReturnsSameGeneric401ForUnknownUsername(): void
+    {
+        $this->userQueryRow = null;
+        $authService = new AuthService($this->jwtService, $this->refreshTokenService, $this->databaseLoginCodeStore);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionCode(401);
+        $this->expectExceptionMessage('Invalid username or password.');
+        $authService->loginV2('missing-user', 'wrong-password');
     }
 
     public function testRefreshReturnsTokenPairForValidToken(): void

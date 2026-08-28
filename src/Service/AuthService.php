@@ -13,6 +13,7 @@ use Yiisoft\ActiveRecord\ActiveQuery;
  *
  * Coordinates JwtService and RefreshTokenService to provide:
  * - login: validate credentials and generate token pair
+ * - loginV2: validate credentials and return the strict V2 client envelope
  * - refresh: rotate refresh tokens and generate new token pair
  * - refreshTokenOnly: strictly rotate a refresh token without login-code fallback
  * - loginCodeOnly: strictly exchange a login code for tokens and white-label URL
@@ -23,6 +24,15 @@ use Yiisoft\ActiveRecord\ActiveQuery;
  */
 final class AuthService
 {
+    /**
+     * A valid bcrypt hash used when a V2 login username does not exist.
+     *
+     * Verifying against this hash keeps unknown-user failures on the same
+     * expensive password-check path as wrong-password failures, reducing the
+     * usefulness of response timing for username enumeration.
+     */
+    private const DUMMY_PASSWORD_HASH = '$2y$12$wuWc8E1WPthIVMXyqSLpseY0XMvljoxGO7z56gLUCFHreiqjrS41q';
+
     public function __construct(
         private JwtService $jwtService,
         private RefreshTokenService $refreshTokenService,
@@ -67,6 +77,32 @@ final class AuthService
             'token' => $tokenData,
             'user' => $user,
         ];
+    }
+
+    /**
+     * Authenticate by username and password using the strict V2 response.
+     *
+     * Credential validation intentionally matches login(), while credential
+     * failures use one generic response to avoid revealing whether a username
+     * exists. The success envelope is identical to refreshTokenOnly().
+     *
+     * @return array{success: true, message: string, nickname: mixed, token: array, user: array}
+     */
+    public function loginV2(string $username, string $password): array
+    {
+        $user = (new ActiveQuery(User::class))
+            ->where(['username' => $username])
+            ->one();
+
+        $passwordIsValid = $user === null
+            ? password_verify($password, self::DUMMY_PASSWORD_HASH)
+            : $user->validatePassword($password);
+
+        if ($user === null || !$passwordIsValid) {
+            throw new RuntimeException('Invalid username or password.', 401);
+        }
+
+        return $this->createStrictClientResponse($user);
     }
 
     /**
@@ -360,11 +396,17 @@ final class AuthService
             throw new RuntimeException('User is not found.', 400);
         }
 
+        return $this->createStrictClientResponse($user);
+    }
+
+    /** @return array{success: true, message: string, nickname: mixed, token: array, user: array} */
+    private function createStrictClientResponse(User $user): array
+    {
         return [
             'success' => true,
             'message' => 'keyToTokenWithUrl',
             'nickname' => $user->get('nickname') ?? '',
-            'token' => $this->generateTokenPair($userId),
+            'token' => $this->generateTokenPair((int) $user->get('id')),
             'user' => $this->createClientUser($user),
         ];
     }

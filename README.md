@@ -72,14 +72,17 @@ php -S 0.0.0.0:8080 -t public
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
+| POST | `/v2/auth/login` | 使用用户名和密码登录；返回 token 和 user，不返回 url |
 | POST | `/v2/auth/refresh-token` | 严格使用 refreshToken 刷新并轮换令牌；返回 token 和 user，不返回 url |
 | POST | `/v2/auth/login-code` | 严格使用 loginCode 登录；返回 token、user 和白牌 url |
 
-`/v2/auth/refresh-token` 与 `/v2/auth/login-code` 的成功响应共享
+`/v2/auth/login`、`/v2/auth/refresh-token` 与 `/v2/auth/login-code` 的成功响应共享
 `success`、`message`、`nickname`、`token`、`user` 五个核心字段，且 `message` 固定为
 `keyToTokenWithUrl`。只有 `/v2/auth/login-code` 额外返回 `url`：有可信白牌域名上下文时
-为 HTTPS URL，没有域名上下文时为 `null`；`/v2/auth/refresh-token` 不返回 `url`。
-旧 `/v1/auth/refresh` 的路径和成功响应契约保持不变；不再提供对应的 V1 严格认证路径。
+为 HTTPS URL，没有域名上下文时为 `null`；`/v2/auth/login` 与 `/v2/auth/refresh-token`
+不返回 `url`。
+旧 `/v1/auth/login` 与 `/v1/auth/refresh` 的路径和成功响应契约保持不变；
+不再提供 `/v1/auth/refresh-token` 与 `/v1/auth/login-code`。
 
 ### 场景服务 (V1)
 

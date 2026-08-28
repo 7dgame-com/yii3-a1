@@ -38,20 +38,23 @@ final class AuthControllerTest extends TestCase
     private JwtService $jwtService;
     private LoginCodeStore $loginCodeStore;
     private string $jwtKeyFile;
+    private ?array $userQueryRow;
 
     protected function setUp(): void
     {
+        $passwordHash = password_hash('correct-password', PASSWORD_DEFAULT);
+        $this->userQueryRow = [
+            'id' => 42,
+            'username' => 'testuser',
+            'nickname' => 'Test User',
+            'password_hash' => $passwordHash,
+        ];
+
         $command = $this->createMock(CommandInterface::class);
-        $command->method('queryOne')->willReturn([
-            'id' => 42,
-            'username' => 'testuser',
-            'nickname' => 'Test User',
-        ]);
-        $command->method('queryAll')->willReturn([[
-            'id' => 42,
-            'username' => 'testuser',
-            'nickname' => 'Test User',
-        ]]);
+        $command->method('queryOne')->willReturnCallback(fn () => $this->userQueryRow);
+        $command->method('queryAll')->willReturnCallback(
+            fn () => $this->userQueryRow === null ? [] : [$this->userQueryRow],
+        );
 
         $quoter = $this->createMock(QuoterInterface::class);
         $quoter->method('quoteTableName')->willReturnCallback(fn ($name) => "`$name`");
@@ -67,6 +70,7 @@ final class AuthControllerTest extends TestCase
             'id' => $column,
             'username' => $column,
             'nickname' => $column,
+            'password_hash' => $column,
         ]);
         $tableSchema->method('getColumn')->willReturn($column);
 
@@ -115,6 +119,98 @@ final class AuthControllerTest extends TestCase
         if (isset($this->jwtKeyFile) && is_file($this->jwtKeyFile)) {
             unlink($this->jwtKeyFile);
         }
+    }
+
+    public function testLoginReturnsSameSuccessContractAsRefreshTokenWithoutUrl(): void
+    {
+        $body = null;
+        $statusCode = null;
+        $headers = [];
+        $this->captureResponse($body, $statusCode, $headers);
+        $newRefreshToken = null;
+
+        try {
+            $this->controller->login($this->request([
+                'username' => 'testuser',
+                'password' => 'correct-password',
+            ]));
+            $decoded = json_decode((string) $body, true, flags: JSON_THROW_ON_ERROR);
+            $newRefreshToken = $decoded['token']['refreshToken'] ?? null;
+
+            $this->assertSame(200, $statusCode);
+            $this->assertSame('application/json', $headers['Content-Type']);
+            $this->assertSame(
+                ['success', 'message', 'nickname', 'token', 'user'],
+                array_keys($decoded),
+            );
+            $this->assertTrue($decoded['success']);
+            $this->assertSame('keyToTokenWithUrl', $decoded['message']);
+            $this->assertSame('Test User', $decoded['nickname']);
+            $this->assertSame(
+                ['accessToken', 'expires', 'refreshToken'],
+                array_keys($decoded['token']),
+            );
+            $this->assertSame([
+                'id' => 42,
+                'username' => 'testuser',
+                'nickname' => 'Test User',
+                'fixture' => false,
+            ], $decoded['user']);
+            $this->assertArrayNotHasKey('url', $decoded);
+        } finally {
+            if (is_string($newRefreshToken)) {
+                $this->refreshTokenService->delete($newRefreshToken);
+            }
+        }
+    }
+
+    #[DataProvider('invalidLoginCredentials')]
+    public function testLoginReturnsSameGeneric401ForInvalidCredentials(
+        string $username,
+        string $password,
+        bool $userExists,
+    ): void
+    {
+        if (!$userExists) {
+            $this->userQueryRow = null;
+        }
+
+        $body = null;
+        $statusCode = null;
+        $headers = [];
+        $this->captureResponse($body, $statusCode, $headers);
+
+        $this->controller->login($this->request([
+            'username' => $username,
+            'password' => $password,
+        ]));
+
+        $this->assertSame(401, $statusCode);
+        $this->assertSame('application/json', $headers['Content-Type']);
+        $this->assertSame([
+            'name' => 'Unauthorized',
+            'message' => 'Invalid username or password.',
+            'code' => 0,
+            'status' => 401,
+            'type' => 'yii\\web\\UnauthorizedHttpException',
+        ], json_decode((string) $body, true, flags: JSON_THROW_ON_ERROR));
+    }
+
+    #[DataProvider('invalidLoginRequestBodies')]
+    public function testLoginRequiresUsernameAndPassword(mixed $requestBody, string $expectedMessage): void
+    {
+        $body = null;
+        $statusCode = null;
+        $headers = [];
+        $this->captureResponse($body, $statusCode, $headers);
+
+        $this->controller->login($this->request($requestBody));
+
+        $this->assertSame(400, $statusCode);
+        $this->assertSame(
+            $expectedMessage,
+            json_decode((string) $body, true, flags: JSON_THROW_ON_ERROR)['message'],
+        );
     }
 
     public function testRefreshTokenReturnsStrictSuccessContractWithoutUrl(): void
@@ -303,6 +399,30 @@ final class AuthControllerTest extends TestCase
             'whitespace only' => [['refreshToken' => '   ']],
             'integer' => [['refreshToken' => 123]],
             'array' => [['refreshToken' => ['not-a-string']]],
+        ];
+    }
+
+    public static function invalidLoginRequestBodies(): array
+    {
+        return [
+            'null body' => [null, 'username is required'],
+            'object body' => [(object) [], 'username is required'],
+            'missing fields' => [[], 'username is required'],
+            'empty username' => [['username' => '', 'password' => 'correct-password'], 'username is required'],
+            'whitespace username' => [['username' => '   ', 'password' => 'correct-password'], 'username is required'],
+            'non-string username' => [['username' => 42, 'password' => 'correct-password'], 'username is required'],
+            'missing password' => [['username' => 'testuser'], 'password is required'],
+            'empty password' => [['username' => 'testuser', 'password' => ''], 'password is required'],
+            'whitespace password' => [['username' => 'testuser', 'password' => '   '], 'password is required'],
+            'non-string password' => [['username' => 'testuser', 'password' => ['secret']], 'password is required'],
+        ];
+    }
+
+    public static function invalidLoginCredentials(): array
+    {
+        return [
+            'existing username with wrong password' => ['testuser', 'wrong-password', true],
+            'unknown username' => ['missing-user', 'wrong-password', false],
         ];
     }
 

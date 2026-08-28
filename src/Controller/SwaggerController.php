@@ -79,6 +79,61 @@ use Psr\Http\Message\StreamFactoryInterface;
     ],
 )]
 #[OA\Post(
+    path: '/v2/auth/login',
+    operationId: 'v2AuthLogin',
+    summary: 'Authenticate with username and password using the V2 response contract',
+    tags: ['Authentication'],
+    requestBody: new OA\RequestBody(
+        required: true,
+        content: new OA\JsonContent(
+            required: ['username', 'password'],
+            properties: [
+                new OA\Property(property: 'username', type: 'string'),
+                new OA\Property(property: 'password', type: 'string', format: 'password'),
+            ],
+            type: 'object',
+        ),
+    ),
+    responses: [
+        new OA\Response(
+            response: 200,
+            description: 'Authenticated',
+            content: new OA\JsonContent(
+                required: ['success', 'message', 'nickname', 'token', 'user'],
+                properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string', example: 'keyToTokenWithUrl'),
+                    new OA\Property(property: 'nickname', type: 'string'),
+                    new OA\Property(
+                        property: 'token',
+                        required: ['accessToken', 'expires', 'refreshToken'],
+                        properties: [
+                            new OA\Property(property: 'accessToken', type: 'string'),
+                            new OA\Property(property: 'expires', type: 'string', example: '2026-08-28 12:00:00'),
+                            new OA\Property(property: 'refreshToken', type: 'string'),
+                        ],
+                        type: 'object',
+                    ),
+                    new OA\Property(
+                        property: 'user',
+                        required: ['id', 'username', 'nickname', 'fixture'],
+                        properties: [
+                            new OA\Property(property: 'id', type: 'integer'),
+                            new OA\Property(property: 'username', type: 'string'),
+                            new OA\Property(property: 'nickname', type: 'string'),
+                            new OA\Property(property: 'fixture', type: 'boolean', example: false),
+                        ],
+                        type: 'object',
+                    ),
+                ],
+                type: 'object',
+            ),
+        ),
+        new OA\Response(response: 400, description: 'username or password is missing or is not a non-empty string'),
+        new OA\Response(response: 401, description: 'Invalid username or password'),
+    ],
+)]
+#[OA\Post(
     path: '/v2/auth/refresh-token',
     operationId: 'v2AuthRefreshToken',
     summary: 'Rotate a genuine refresh token',

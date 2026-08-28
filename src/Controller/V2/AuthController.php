@@ -14,7 +14,8 @@ use RuntimeException;
 /**
  * V2 authentication controller.
  *
- * Provides the two strict credential-specific authentication flows:
+ * Provides the credential-specific V2 authentication flows:
+ * - POST /v2/auth/login
  * - POST /v2/auth/refresh-token
  * - POST /v2/auth/login-code
  */
@@ -25,6 +26,31 @@ final class AuthController
         private readonly ResponseFactoryInterface $responseFactory,
         private readonly StreamFactoryInterface $streamFactory,
     ) {
+    }
+
+    /**
+     * Authenticate with a username and password using the uniform V2 response.
+     */
+    public function login(ServerRequestInterface $request): ResponseInterface
+    {
+        $body = $request->getParsedBody();
+        $username = is_array($body) ? ($body['username'] ?? null) : null;
+        $password = is_array($body) ? ($body['password'] ?? null) : null;
+
+        if (!is_string($username) || trim($username) === '') {
+            return $this->createErrorResponse(400, 'username is required');
+        }
+        if (!is_string($password) || trim($password) === '') {
+            return $this->createErrorResponse(400, 'password is required');
+        }
+
+        try {
+            return $this->createJsonResponse(
+                $this->authService->loginV2($username, $password),
+            );
+        } catch (RuntimeException $e) {
+            return $this->createErrorResponse($e->getCode() ?: 400, $e->getMessage());
+        }
     }
 
     /**
