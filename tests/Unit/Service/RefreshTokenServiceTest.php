@@ -141,6 +141,24 @@ final class RefreshTokenServiceTest extends TestCase
     }
 
     /**
+     * Test that consume() returns the owner once and atomically removes the token.
+     * Validates: Requirement 3.2
+     */
+    public function testConsumeReturnsUserIdOnlyOnce(): void
+    {
+        $token = $this->service->create(321);
+
+        $this->assertSame(321, $this->service->consume($token));
+        $this->assertNull($this->service->consume($token));
+        $this->assertNull($this->service->validate($token));
+    }
+
+    public function testConsumeReturnsNullForUnknownToken(): void
+    {
+        $this->assertNull($this->service->consume('unknown-refresh-token'));
+    }
+
+    /**
      * Test that delete() removes the token from Redis.
      * Validates: Requirement 3.2
      */

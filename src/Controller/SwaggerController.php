@@ -79,6 +79,188 @@ use Psr\Http\Message\StreamFactoryInterface;
     ],
 )]
 #[OA\Post(
+    path: '/v2/auth/login',
+    operationId: 'v2AuthLogin',
+    summary: 'Authenticate with username and password using the V2 response contract',
+    tags: ['Authentication'],
+    requestBody: new OA\RequestBody(
+        required: true,
+        content: new OA\JsonContent(
+            required: ['username', 'password'],
+            properties: [
+                new OA\Property(property: 'username', type: 'string'),
+                new OA\Property(property: 'password', type: 'string', format: 'password'),
+            ],
+            type: 'object',
+        ),
+    ),
+    responses: [
+        new OA\Response(
+            response: 200,
+            description: 'Authenticated',
+            content: new OA\JsonContent(
+                required: ['success', 'message', 'nickname', 'token', 'user'],
+                properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string', example: 'keyToTokenWithUrl'),
+                    new OA\Property(property: 'nickname', type: 'string'),
+                    new OA\Property(
+                        property: 'token',
+                        required: ['accessToken', 'expires', 'refreshToken'],
+                        properties: [
+                            new OA\Property(property: 'accessToken', type: 'string'),
+                            new OA\Property(property: 'expires', type: 'string', example: '2026-08-28 12:00:00'),
+                            new OA\Property(property: 'refreshToken', type: 'string'),
+                        ],
+                        type: 'object',
+                    ),
+                    new OA\Property(
+                        property: 'user',
+                        required: ['id', 'username', 'nickname', 'fixture'],
+                        properties: [
+                            new OA\Property(property: 'id', type: 'integer'),
+                            new OA\Property(property: 'username', type: 'string'),
+                            new OA\Property(property: 'nickname', type: 'string'),
+                            new OA\Property(property: 'fixture', type: 'boolean', example: false),
+                        ],
+                        type: 'object',
+                    ),
+                ],
+                type: 'object',
+            ),
+        ),
+        new OA\Response(response: 400, description: 'username or password is missing or is not a non-empty string'),
+        new OA\Response(response: 401, description: 'Invalid username or password'),
+    ],
+)]
+#[OA\Post(
+    path: '/v2/auth/refresh-token',
+    operationId: 'v2AuthRefreshToken',
+    summary: 'Rotate a genuine refresh token',
+    description: 'Accepts only a refresh token issued by this service. Login codes and QR transport wrappers are never resolved by this endpoint.',
+    tags: ['Authentication'],
+    requestBody: new OA\RequestBody(
+        required: true,
+        content: new OA\JsonContent(
+            required: ['refreshToken'],
+            properties: [
+                new OA\Property(
+                    property: 'refreshToken',
+                    description: 'Refresh token returned by a previous successful authentication or refresh.',
+                    type: 'string',
+                ),
+            ],
+            type: 'object',
+        ),
+    ),
+    responses: [
+        new OA\Response(
+            response: 200,
+            description: 'Refresh token rotated',
+            content: new OA\JsonContent(
+                required: ['success', 'message', 'nickname', 'token', 'user'],
+                properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string', example: 'keyToTokenWithUrl'),
+                    new OA\Property(property: 'nickname', type: 'string'),
+                    new OA\Property(
+                        property: 'token',
+                        required: ['accessToken', 'expires', 'refreshToken'],
+                        properties: [
+                            new OA\Property(property: 'accessToken', type: 'string'),
+                            new OA\Property(property: 'expires', type: 'string', example: '2026-08-28 12:00:00'),
+                            new OA\Property(property: 'refreshToken', type: 'string'),
+                        ],
+                        type: 'object',
+                    ),
+                    new OA\Property(
+                        property: 'user',
+                        required: ['id', 'username', 'nickname', 'fixture'],
+                        properties: [
+                            new OA\Property(property: 'id', type: 'integer'),
+                            new OA\Property(property: 'username', type: 'string'),
+                            new OA\Property(property: 'nickname', type: 'string'),
+                            new OA\Property(property: 'fixture', type: 'boolean', example: false),
+                        ],
+                        type: 'object',
+                    ),
+                ],
+                type: 'object',
+            ),
+        ),
+        new OA\Response(response: 400, description: 'refreshToken is missing or is not a non-empty string'),
+        new OA\Response(response: 401, description: 'Refresh token is invalid, expired, or already consumed'),
+    ],
+)]
+#[OA\Post(
+    path: '/v2/auth/login-code',
+    operationId: 'v2AuthLoginCode',
+    summary: 'Authenticate with a short-lived login code',
+    description: 'Accepts only a login code. Bare codes are canonical; existing web_ and QR URL transport forms remain accepted. Refresh-token storage is never queried by this endpoint.',
+    tags: ['Authentication'],
+    requestBody: new OA\RequestBody(
+        required: true,
+        content: new OA\JsonContent(
+            required: ['loginCode'],
+            properties: [
+                new OA\Property(
+                    property: 'loginCode',
+                    description: 'Short-lived QR login code, optionally wrapped in an existing web_ transport form.',
+                    type: 'string',
+                ),
+            ],
+            type: 'object',
+        ),
+    ),
+    responses: [
+        new OA\Response(
+            response: 200,
+            description: 'Authenticated with a login code',
+            content: new OA\JsonContent(
+                required: ['success', 'message', 'nickname', 'token', 'user', 'url'],
+                properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string', example: 'keyToTokenWithUrl'),
+                    new OA\Property(property: 'nickname', type: 'string'),
+                    new OA\Property(
+                        property: 'token',
+                        required: ['accessToken', 'expires', 'refreshToken'],
+                        properties: [
+                            new OA\Property(property: 'accessToken', type: 'string'),
+                            new OA\Property(property: 'expires', type: 'string', example: '2026-08-28 12:00:00'),
+                            new OA\Property(property: 'refreshToken', type: 'string'),
+                        ],
+                        type: 'object',
+                    ),
+                    new OA\Property(
+                        property: 'user',
+                        required: ['id', 'username', 'nickname', 'fixture'],
+                        properties: [
+                            new OA\Property(property: 'id', type: 'integer'),
+                            new OA\Property(property: 'username', type: 'string'),
+                            new OA\Property(property: 'nickname', type: 'string'),
+                            new OA\Property(property: 'fixture', type: 'boolean', example: false),
+                        ],
+                        type: 'object',
+                    ),
+                    new OA\Property(
+                        property: 'url',
+                        description: 'Always present. HTTPS URL derived from the trusted login-code domain, or null when the code has no domain context.',
+                        type: 'string',
+                        format: 'uri',
+                        nullable: true,
+                        example: 'https://d.dev.xrugc.com',
+                    ),
+                ],
+                type: 'object',
+            ),
+        ),
+        new OA\Response(response: 400, description: 'loginCode is missing or is not a non-empty string'),
+        new OA\Response(response: 401, description: 'Login code is invalid or expired'),
+        new OA\Response(response: 503, description: 'Login-code storage is unavailable'),
+    ],
+)]
+#[OA\Post(
     path: '/v1/auth/key-to-token',
     operationId: 'v1AuthKeyToToken',
     summary: 'Exchange a linked key for tokens',

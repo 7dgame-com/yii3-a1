@@ -17,6 +17,7 @@ use App\Service\PhototypeQueryService;
 use App\Service\RefreshTokenService;
 use App\Service\SnapshotDiagnosticsService;
 use App\Service\SnapshotQueryService;
+use App\Service\UnityDevLoginFixture;
 use App\Service\Yii2RestResponseFactory;
 use Predis\Client as RedisClient;
 use Psr\Log\LoggerInterface;
@@ -79,12 +80,22 @@ return [
             'redis' => \Yiisoft\Definitions\Reference::to(RedisClient::class),
         ],
     ],
+    UnityDevLoginFixture::class => [
+        'class' => UnityDevLoginFixture::class,
+        '__construct()' => [
+            'enabled' => $params['unityDevLoginFixture']['enabled'],
+            'environment' => $params['unityDevLoginFixture']['environment'],
+            'keySha256' => $params['unityDevLoginFixture']['keySha256'],
+            'frontendDomain' => $params['unityDevLoginFixture']['frontendDomain'],
+        ],
+    ],
     AuthService::class => [
         'class' => AuthService::class,
         '__construct()' => [
             'jwtService' => \Yiisoft\Definitions\Reference::to(JwtService::class),
             'refreshTokenService' => \Yiisoft\Definitions\Reference::to(RefreshTokenService::class),
             'loginCodeStore' => \Yiisoft\Definitions\Reference::to(LoginCodeStore::class),
+            'unityDevLoginFixture' => \Yiisoft\Definitions\Reference::to(UnityDevLoginFixture::class),
         ],
     ],
     SnapshotQueryService::class => [

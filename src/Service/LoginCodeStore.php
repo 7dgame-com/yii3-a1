@@ -53,6 +53,12 @@ final class LoginCodeStore
         return $this->resolveForSource($rawLoginCode, LoginCodeTelemetry::SOURCE_YII3_REFRESH);
     }
 
+    /** Resolve a login code used by the strict login-code endpoint. */
+    public function resolveForLoginCode(string $rawLoginCode): LoginCodeLookupResult
+    {
+        return $this->resolveForSource($rawLoginCode, LoginCodeTelemetry::SOURCE_YII3_LOGIN_CODE);
+    }
+
     /**
      * Resolve a login code used by the key-to-token consumer endpoint.
      *

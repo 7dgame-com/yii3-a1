@@ -127,7 +127,17 @@ jobs:
           BRANCH_NAME=$(echo "${{ github.ref }}" | sed 's|refs/heads/||' | sed 's|/|-|g')
           IMAGE="${TENCENT_REGISTRY}/${TENCENT_IMAGE_NAME}:${BRANCH_NAME}"
 
-          docker build -t "${IMAGE}" .
+          IMAGE_YII_ENV=production
+          UNITY_DEV_LOGIN_FIXTURE_ENABLED=false
+          if [ "${BRANCH_NAME}" = "develop" ]; then
+            IMAGE_YII_ENV=dev
+            UNITY_DEV_LOGIN_FIXTURE_ENABLED=true
+          fi
+
+          docker build \
+            --build-arg YII_ENV="${IMAGE_YII_ENV}" \
+            --build-arg UNITY_DEV_LOGIN_FIXTURE_ENABLED="${UNITY_DEV_LOGIN_FIXTURE_ENABLED}" \
+            -t "${IMAGE}" .
           docker push "${IMAGE}"
 
           if [ "${BRANCH_NAME}" = "publish" ]; then
