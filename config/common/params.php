@@ -52,6 +52,8 @@ if ($redisDatabase < 0) {
     throw new \InvalidArgumentException('REDIS_DB must be a non-negative integer.');
 }
 
+$applicationEnvironment = strtolower(trim((string) ($_ENV['YII_ENV'] ?? 'production')));
+
 /**
  * Common parameters shared between web and console applications.
  */
@@ -103,6 +105,20 @@ return [
         'issueLimit' => $integerEnvironment('LOGIN_CODE_ISSUE_LIMIT', 5),
         'issueWindowSeconds' => $integerEnvironment('LOGIN_CODE_ISSUE_WINDOW_SECONDS', 60),
         'legacyDbAvailable' => $booleanEnvironment('LOGIN_CODE_LEGACY_DB_AVAILABLE', true),
+    ],
+
+    // Fixed, fake Unity credential. It is disabled unless the develop image
+    // explicitly opts in and never touches real user data.
+    'unityDevLoginFixture' => [
+        'enabled' => $booleanEnvironment(
+            'UNITY_DEV_LOGIN_FIXTURE_ENABLED',
+            false,
+        ),
+        'environment' => $applicationEnvironment,
+        'keySha256' => $_ENV['UNITY_DEV_LOGIN_KEY_SHA256']
+            ?? \App\Service\UnityDevLoginFixture::DEFAULT_KEY_SHA256,
+        'frontendDomain' => $_ENV['UNITY_DEV_LOGIN_FRONTEND_DOMAIN']
+            ?? \App\Service\UnityDevLoginFixture::DEFAULT_FRONTEND_DOMAIN,
     ],
 
     // JWT configuration

@@ -52,8 +52,8 @@ final class RoutesTest extends TestCase
 
     public function testTotalRouteCount(): void
     {
-        // 5 auth + 7 server + 1 phototype + 4 v2 + 1 health + 2 swagger = 20
-        $this->assertCount(20, $this->routes);
+        // 8 auth + 7 server + 1 phototype + 4 other v2 + 1 health + 2 swagger = 23
+        $this->assertCount(23, $this->routes);
     }
 
     // =========================================================================
@@ -74,6 +74,43 @@ final class RoutesTest extends TestCase
         $this->assertNotNull($route, 'Route v1.auth.refresh should exist');
         $this->assertSame('/v1/auth/refresh', $route->getData('pattern'));
         $this->assertSame(['POST'], $route->getData('methods'));
+    }
+
+    public function testV2AuthRefreshTokenRoute(): void
+    {
+        $route = $this->findRouteByName('v2.auth.refresh-token');
+        $this->assertNotNull($route, 'Route v2.auth.refresh-token should exist');
+        $this->assertSame('/v2/auth/refresh-token', $route->getData('pattern'));
+        $this->assertSame(['POST'], $route->getData('methods'));
+    }
+
+    public function testV2AuthLoginRoute(): void
+    {
+        $route = $this->findRouteByName('v2.auth.login');
+        $this->assertNotNull($route, 'Route v2.auth.login should exist');
+        $this->assertSame('/v2/auth/login', $route->getData('pattern'));
+        $this->assertSame(['POST'], $route->getData('methods'));
+    }
+
+    public function testV2AuthLoginCodeRoute(): void
+    {
+        $route = $this->findRouteByName('v2.auth.login-code');
+        $this->assertNotNull($route, 'Route v2.auth.login-code should exist');
+        $this->assertSame('/v2/auth/login-code', $route->getData('pattern'));
+        $this->assertSame(['POST'], $route->getData('methods'));
+    }
+
+    public function testV1StrictCredentialRoutesAreNotDefined(): void
+    {
+        $paths = array_map(
+            static fn(Route $route): string => $route->getData('pattern'),
+            $this->routes,
+        );
+
+        $this->assertNotContains('/v1/auth/refresh-token', $paths);
+        $this->assertNotContains('/v1/auth/login-code', $paths);
+        $this->assertNull($this->findRouteByName('v1.auth.refresh-token'));
+        $this->assertNull($this->findRouteByName('v1.auth.login-code'));
     }
 
     public function testV1AuthKeyToTokenRoute(): void
@@ -253,6 +290,9 @@ final class RoutesTest extends TestCase
         $publicRouteNames = [
             'v1.auth.login',
             'v1.auth.refresh',
+            'v2.auth.login',
+            'v2.auth.refresh-token',
+            'v2.auth.login-code',
             'v1.auth.key-to-token',
             'v1.auth.key-to-token-with-url',
             'v1.auth.login-code-context',
@@ -315,6 +355,9 @@ final class RoutesTest extends TestCase
         $expectedPaths = [
             '/v1/auth/login',
             '/v1/auth/refresh',
+            '/v2/auth/login',
+            '/v2/auth/refresh-token',
+            '/v2/auth/login-code',
             '/v1/auth/key-to-token',
             '/v1/auth/key-to-token-with-url',
             '/v1/auth/login-code-context',

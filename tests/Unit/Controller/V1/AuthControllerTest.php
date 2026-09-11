@@ -33,12 +33,22 @@ final class AuthControllerTest extends TestCase
     private StreamFactoryInterface $streamFactory;
     private AuthController $controller;
     private RefreshTokenService $refreshTokenService;
+    private JwtService $jwtService;
+    private LoginCodeStore $loginCodeStore;
 
     protected function setUp(): void
     {
         $command = $this->createMock(CommandInterface::class);
-        $command->method('queryOne')->willReturn(['id' => 42, 'nickname' => 'testuser']);
-        $command->method('queryAll')->willReturn([['id' => 42, 'nickname' => 'testuser']]);
+        $command->method('queryOne')->willReturn([
+            'id' => 42,
+            'username' => 'testuser',
+            'nickname' => 'testuser',
+        ]);
+        $command->method('queryAll')->willReturn([[
+            'id' => 42,
+            'username' => 'testuser',
+            'nickname' => 'testuser',
+        ]]);
 
         $quoter = $this->createMock(QuoterInterface::class);
         $quoter->method('quoteTableName')->willReturnCallback(fn($n) => "`$n`");
@@ -50,7 +60,11 @@ final class AuthControllerTest extends TestCase
         $col->method('phpTypecast')->willReturnCallback(fn($v) => $v);
 
         $tableSchema = $this->createMock(TableSchemaInterface::class);
-        $tableSchema->method('getColumns')->willReturn(['id' => $col, 'nickname' => $col]);
+        $tableSchema->method('getColumns')->willReturn([
+            'id' => $col,
+            'username' => $col,
+            'nickname' => $col,
+        ]);
         $tableSchema->method('getColumn')->willReturn($col);
 
         $schema = $this->createMock(SchemaInterface::class);
@@ -72,13 +86,17 @@ final class AuthControllerTest extends TestCase
         $kf = tempnam(sys_get_temp_dir(), 'jwt_ctrl_test_');
         file_put_contents($kf, 'test-secret-key-for-controller-testing-minimum-len');
 
-        $jwtService = new JwtService($kf);
+        $this->jwtService = new JwtService($kf);
 
         $redis = RedisTestClientFactory::create();
 
         $this->refreshTokenService = new RefreshTokenService($redis);
-        $loginCodeStore = new LoginCodeStore($redis, new LoginCodeSettings());
-        $this->authService = new AuthService($jwtService, $this->refreshTokenService, $loginCodeStore);
+        $this->loginCodeStore = new LoginCodeStore($redis, new LoginCodeSettings());
+        $this->authService = new AuthService(
+            $this->jwtService,
+            $this->refreshTokenService,
+            $this->loginCodeStore,
+        );
 
         $this->responseFactory = $this->createMock(ResponseFactoryInterface::class);
         $this->streamFactory = $this->createMock(StreamFactoryInterface::class);
@@ -127,13 +145,11 @@ final class AuthControllerTest extends TestCase
         $this->okResp($b);
         $this->controller->refresh($this->req(['refreshToken' => $t]));
         $d = json_decode($b, true);
-        $this->assertArrayHasKey('success', $d);
-        $this->assertArrayHasKey('message', $d);
-        $this->assertArrayHasKey('nickname', $d);
-        $this->assertArrayHasKey('token', $d);
-        $this->assertArrayHasKey('accessToken', $d['token']);
-        $this->assertArrayHasKey('refreshToken', $d['token']);
-        $this->assertArrayHasKey('expires', $d['token']);
+        $this->assertSame(['success', 'message', 'nickname', 'token'], array_keys($d));
+        $this->assertSame('refresh', $d['message']);
+        $this->assertSame(['accessToken', 'expires', 'refreshToken'], array_keys($d['token']));
+        $this->assertArrayNotHasKey('user', $d);
+        $this->assertArrayNotHasKey('url', $d);
         $this->refreshTokenService->delete($d['token']['refreshToken']);
     }
 

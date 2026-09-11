@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Service;
 
+use App\Model\User;
 use App\Service\AuthService;
 use App\Service\JwtService;
 use App\Service\LoginCodeSettings;
 use App\Service\LoginCodeStore;
 use App\Service\RefreshTokenService;
+use App\Service\UnityDevLoginFixture;
 use App\Tests\Support\ControlledLoginCodeRedisClient;
 use App\Tests\Support\MappedLoginCodeRedisClient;
 use App\Tests\Support\RedisTestClientFactory;
@@ -33,12 +35,22 @@ final class AuthServiceTest extends TestCase
     private RefreshTokenService $refreshTokenService;
     private LoginCodeStore $databaseLoginCodeStore;
     private RedisClient $redis;
+    private ?array $userQueryRow;
 
     protected function setUp(): void
     {
+        $this->userQueryRow = [
+            'id' => 42,
+            'username' => 'test-user',
+            'nickname' => 'testuser',
+            'password_hash' => password_hash('correct-password', PASSWORD_DEFAULT),
+        ];
+
         $command = $this->createMock(CommandInterface::class);
-        $command->method('queryOne')->willReturn(['id' => 42, 'nickname' => 'testuser']);
-        $command->method('queryAll')->willReturn([['id' => 42, 'nickname' => 'testuser']]);
+        $command->method('queryOne')->willReturnCallback(fn () => $this->userQueryRow);
+        $command->method('queryAll')->willReturnCallback(
+            fn () => $this->userQueryRow === null ? [] : [$this->userQueryRow],
+        );
 
         $quoter = $this->createMock(QuoterInterface::class);
         $quoter->method('quoteTableName')->willReturnCallback(fn($n) => "`$n`");
@@ -50,7 +62,12 @@ final class AuthServiceTest extends TestCase
         $col->method('phpTypecast')->willReturnCallback(fn($v) => $v);
 
         $tableSchema = $this->createMock(TableSchemaInterface::class);
-        $tableSchema->method('getColumns')->willReturn(['id' => $col, 'nickname' => $col]);
+        $tableSchema->method('getColumns')->willReturn([
+            'id' => $col,
+            'username' => $col,
+            'nickname' => $col,
+            'password_hash' => $col,
+        ]);
         $tableSchema->method('getColumn')->willReturn($col);
 
         $schema = $this->createMock(SchemaInterface::class);
@@ -78,6 +95,110 @@ final class AuthServiceTest extends TestCase
         $this->databaseLoginCodeStore = new LoginCodeStore($this->redis, new LoginCodeSettings());
     }
 
+    public function testLoginKeepsLegacySuccessEnvelope(): void
+    {
+        $authService = new AuthService($this->jwtService, $this->refreshTokenService, $this->databaseLoginCodeStore);
+        $refreshToken = null;
+
+        try {
+            $result = $authService->login('test-user', 'correct-password');
+            $refreshToken = $result['token']['refreshToken'];
+
+            $this->assertSame(
+                ['success', 'message', 'nickname', 'token', 'user'],
+                array_keys($result),
+            );
+            $this->assertTrue($result['success']);
+            $this->assertSame('login', $result['message']);
+            $this->assertSame('testuser', $result['nickname']);
+            $this->assertInstanceOf(User::class, $result['user']);
+            $this->assertArrayNotHasKey('url', $result);
+        } finally {
+            if (is_string($refreshToken)) {
+                $this->refreshTokenService->delete($refreshToken);
+            }
+        }
+    }
+
+    public function testLoginKeepsLegacyWrongPasswordError(): void
+    {
+        $authService = new AuthService($this->jwtService, $this->refreshTokenService, $this->databaseLoginCodeStore);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionCode(400);
+        $this->expectExceptionMessage('wrong password');
+        $authService->login('test-user', 'wrong-password');
+    }
+
+    public function testLoginKeepsLegacyUnknownUserError(): void
+    {
+        $this->userQueryRow = null;
+        $authService = new AuthService($this->jwtService, $this->refreshTokenService, $this->databaseLoginCodeStore);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionCode(400);
+        $this->expectExceptionMessage('no user');
+        $authService->login('missing-user', 'wrong-password');
+    }
+
+    public function testLoginV2ReturnsStrictRefreshTokenEnvelopeWithSafeUserAndNoUrl(): void
+    {
+        $authService = new AuthService($this->jwtService, $this->refreshTokenService, $this->databaseLoginCodeStore);
+        $refreshToken = null;
+
+        try {
+            $result = $authService->loginV2('test-user', 'correct-password');
+            $refreshToken = $result['token']['refreshToken'];
+
+            $this->assertSame(
+                ['success', 'message', 'nickname', 'token', 'user'],
+                array_keys($result),
+            );
+            $this->assertTrue($result['success']);
+            $this->assertSame('keyToTokenWithUrl', $result['message']);
+            $this->assertSame('testuser', $result['nickname']);
+            $this->assertSame(
+                ['accessToken', 'expires', 'refreshToken'],
+                array_keys($result['token']),
+            );
+            $this->assertSame([
+                'id' => 42,
+                'username' => 'test-user',
+                'nickname' => 'testuser',
+                'fixture' => false,
+            ], $result['user']);
+            $this->assertArrayNotHasKey('password_hash', $result['user']);
+            $this->assertArrayNotHasKey('url', $result);
+            $this->assertSame(42, $this->refreshTokenService->validate($refreshToken));
+            $this->assertSame(42, $this->jwtService->parseToken($result['token']['accessToken'])['user_id'] ?? null);
+        } finally {
+            if (is_string($refreshToken)) {
+                $this->refreshTokenService->delete($refreshToken);
+            }
+        }
+    }
+
+    public function testLoginV2ReturnsGeneric401ForWrongPassword(): void
+    {
+        $authService = new AuthService($this->jwtService, $this->refreshTokenService, $this->databaseLoginCodeStore);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionCode(401);
+        $this->expectExceptionMessage('Invalid username or password.');
+        $authService->loginV2('test-user', 'wrong-password');
+    }
+
+    public function testLoginV2ReturnsSameGeneric401ForUnknownUsername(): void
+    {
+        $this->userQueryRow = null;
+        $authService = new AuthService($this->jwtService, $this->refreshTokenService, $this->databaseLoginCodeStore);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionCode(401);
+        $this->expectExceptionMessage('Invalid username or password.');
+        $authService->loginV2('missing-user', 'wrong-password');
+    }
+
     public function testRefreshReturnsTokenPairForValidToken(): void
     {
         $authService = new AuthService($this->jwtService, $this->refreshTokenService, $this->databaseLoginCodeStore);
@@ -85,10 +206,570 @@ final class AuthServiceTest extends TestCase
         $result = $authService->refresh($oldRefreshToken);
         $this->assertTrue($result['success']);
         $this->assertSame('refresh', $result['message']);
+        $this->assertSame(['success', 'message', 'nickname', 'token'], array_keys($result));
+        $this->assertArrayNotHasKey('user', $result);
+        $this->assertArrayNotHasKey('url', $result);
         $this->assertArrayHasKey('nickname', $result);
         $this->assertArrayHasKey('token', $result);
         $this->assertNotEmpty($result['token']['accessToken']);
         $this->assertNotEmpty($result['token']['refreshToken']);
+    }
+
+    public function testRefreshTokenOnlyRotatesValidTokenWithoutLoginCodeLookup(): void
+    {
+        $loginCodeRedis = new ControlledLoginCodeRedisClient(
+            null,
+            -2,
+            [1_780_000_000, 0],
+            new RuntimeException('strict refresh must not query login-code storage'),
+        );
+        $loginCodeStore = new LoginCodeStore(
+            $loginCodeRedis,
+            new LoginCodeSettings(
+                readMode: LoginCodeSettings::READ_REDIS,
+                writeMode: LoginCodeSettings::WRITE_REDIS,
+            ),
+            StaticLoginCodeReadiness::ready(),
+        );
+        $authService = new AuthService($this->jwtService, $this->refreshTokenService, $loginCodeStore);
+        $oldRefreshToken = $this->refreshTokenService->create(42);
+        $newRefreshToken = null;
+
+        try {
+            $result = $authService->refreshTokenOnly('  ' . $oldRefreshToken . '  ');
+            $newRefreshToken = $result['token']['refreshToken'];
+
+            $this->assertTrue($result['success']);
+            $this->assertSame('keyToTokenWithUrl', $result['message']);
+            $this->assertSame(
+                ['success', 'message', 'nickname', 'token', 'user'],
+                array_keys($result),
+            );
+            $this->assertSame(
+                ['id' => 42, 'username' => 'test-user', 'nickname' => 'testuser', 'fixture' => false],
+                $result['user'],
+            );
+            $this->assertArrayNotHasKey('url', $result);
+            $this->assertNotSame($oldRefreshToken, $newRefreshToken);
+            $this->assertNull($this->refreshTokenService->validate($oldRefreshToken));
+            $this->assertSame(42, $this->refreshTokenService->validate($newRefreshToken));
+            $this->assertSame(42, $this->jwtService->parseToken($result['token']['accessToken'])['user_id'] ?? null);
+            $this->assertSame([], $loginCodeRedis->getKeys);
+            $this->assertSame([], $loginCodeRedis->pttlKeys);
+            $this->assertSame(0, $loginCodeRedis->timeCalls);
+        } finally {
+            $this->refreshTokenService->delete($oldRefreshToken);
+            if (is_string($newRefreshToken)) {
+                $this->refreshTokenService->delete($newRefreshToken);
+            }
+        }
+    }
+
+    public function testRefreshTokenOnlyRejectsValidLoginCodeWithoutStoreFallback(): void
+    {
+        $rawCode = bin2hex(random_bytes(32));
+        $loginCodeRedis = new ControlledLoginCodeRedisClient(
+            $this->redisCodePayload(userId: 42, issuedAt: 1_780_000_000),
+            240_001,
+            [1_780_000_000, 0],
+        );
+        $loginCodeStore = new LoginCodeStore(
+            $loginCodeRedis,
+            new LoginCodeSettings(
+                readMode: LoginCodeSettings::READ_REDIS,
+                writeMode: LoginCodeSettings::WRITE_REDIS,
+            ),
+            StaticLoginCodeReadiness::ready(),
+        );
+        $authService = new AuthService($this->jwtService, $this->refreshTokenService, $loginCodeStore);
+
+        try {
+            $authService->refreshTokenOnly($rawCode);
+            $this->fail('A strict refresh endpoint must reject a valid login code.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame(401, $exception->getCode());
+            $this->assertSame('Refresh token is invalid.', $exception->getMessage());
+        }
+
+        $this->assertSame([], $loginCodeRedis->getKeys);
+        $this->assertSame([], $loginCodeRedis->pttlKeys);
+        $this->assertSame(0, $loginCodeRedis->timeCalls);
+    }
+
+    public function testRefreshTokenOnlyRejectsQrWrappedRefreshTokenWithoutConsumingIt(): void
+    {
+        $loginCodeRedis = new ControlledLoginCodeRedisClient(
+            null,
+            -2,
+            [1_780_000_000, 0],
+            new RuntimeException('strict refresh must not query login-code storage'),
+        );
+        $loginCodeStore = new LoginCodeStore(
+            $loginCodeRedis,
+            new LoginCodeSettings(
+                readMode: LoginCodeSettings::READ_REDIS,
+                writeMode: LoginCodeSettings::WRITE_REDIS,
+            ),
+            StaticLoginCodeReadiness::ready(),
+        );
+        $authService = new AuthService($this->jwtService, $this->refreshTokenService, $loginCodeStore);
+        $refreshToken = $this->refreshTokenService->create(42);
+
+        try {
+            foreach ([
+                'web_' . $refreshToken,
+                'https://example.invalid/login?web_' . $refreshToken,
+                'https://example.invalid/login?next=unity&web_' . $refreshToken,
+            ] as $wrappedToken) {
+                try {
+                    $authService->refreshTokenOnly($wrappedToken);
+                    $this->fail('A strict refresh endpoint must not unwrap QR transport formats.');
+                } catch (RuntimeException $exception) {
+                    $this->assertSame(401, $exception->getCode());
+                    $this->assertSame('Refresh token is invalid.', $exception->getMessage());
+                }
+
+                $this->assertSame(42, $this->refreshTokenService->validate($refreshToken));
+            }
+
+            $this->assertSame([], $loginCodeRedis->getKeys);
+        } finally {
+            $this->refreshTokenService->delete($refreshToken);
+        }
+    }
+
+    public function testRefreshTokenOnlyDoesNotAcceptUnityDevLoginFixture(): void
+    {
+        $loginCodeRedis = new ControlledLoginCodeRedisClient(
+            null,
+            -2,
+            [1_780_000_000, 0],
+            new RuntimeException('strict refresh must not query login-code storage'),
+        );
+        $loginCodeStore = new LoginCodeStore(
+            $loginCodeRedis,
+            new LoginCodeSettings(
+                readMode: LoginCodeSettings::READ_REDIS,
+                writeMode: LoginCodeSettings::WRITE_REDIS,
+            ),
+            StaticLoginCodeReadiness::ready(),
+        );
+        $rawKey = 'unity-unit-test-key-000000000000000000000001';
+        $fixture = new UnityDevLoginFixture(
+            enabled: true,
+            environment: 'dev',
+            keySha256: hash('sha256', $rawKey),
+        );
+        $authService = new AuthService(
+            $this->jwtService,
+            $this->refreshTokenService,
+            $loginCodeStore,
+            $fixture,
+        );
+
+        try {
+            $authService->refreshTokenOnly($rawKey);
+            $this->fail('The development login fixture must not act as a refresh token.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame(401, $exception->getCode());
+            $this->assertSame('Refresh token is invalid.', $exception->getMessage());
+        }
+
+        $this->assertSame([], $loginCodeRedis->getKeys);
+    }
+
+    public function testLoginCodeOnlyAcceptsQrTransportFormatsAndReturnsWhiteLabelUrl(): void
+    {
+        $rawCode = bin2hex(random_bytes(32));
+        $loginCodeRedis = new ControlledLoginCodeRedisClient(
+            $this->redisCodePayload(
+                userId: 42,
+                issuedAt: 1_780_000_000,
+                frontendDomain: 'd.dev.xrugc.com',
+            ),
+            240_001,
+            [1_780_000_000, 0],
+        );
+        $loginCodeStore = new LoginCodeStore(
+            $loginCodeRedis,
+            new LoginCodeSettings(
+                readMode: LoginCodeSettings::READ_REDIS,
+                writeMode: LoginCodeSettings::WRITE_REDIS,
+            ),
+            StaticLoginCodeReadiness::ready(),
+        );
+        $authService = new AuthService($this->jwtService, $this->refreshTokenService, $loginCodeStore);
+        $issuedRefreshTokens = [];
+        $inputs = [
+            $rawCode,
+            'web_' . $rawCode,
+            '?web_' . $rawCode,
+            'https://example.invalid/login?next=unity&web_' . $rawCode,
+        ];
+
+        try {
+            foreach ($inputs as $input) {
+                $result = $authService->loginCodeOnly($input);
+                $issuedRefreshTokens[] = $result['token']['refreshToken'];
+
+                $this->assertTrue($result['success']);
+                $this->assertSame('keyToTokenWithUrl', $result['message']);
+                $this->assertSame(
+                    ['success', 'message', 'nickname', 'token', 'user', 'url'],
+                    array_keys($result),
+                );
+                $this->assertSame('https://d.dev.xrugc.com', $result['url']);
+                $this->assertSame(
+                    ['id' => 42, 'username' => 'test-user', 'nickname' => 'testuser', 'fixture' => false],
+                    $result['user'],
+                );
+                $this->assertSame(42, $this->jwtService->parseToken($result['token']['accessToken'])['user_id'] ?? null);
+                $this->assertSame(42, $this->refreshTokenService->validate($result['token']['refreshToken']));
+            }
+
+            $this->assertCount(count($inputs), array_unique($issuedRefreshTokens));
+            $this->assertSame(
+                array_fill(0, count($inputs), $loginCodeStore->keyFor($rawCode)),
+                $loginCodeRedis->getKeys,
+            );
+        } finally {
+            foreach ($issuedRefreshTokens as $issuedRefreshToken) {
+                $this->refreshTokenService->delete($issuedRefreshToken);
+            }
+        }
+    }
+
+    public function testLoginCodeOnlySupportsUnityDevWhiteLabelFixtureWithoutStoreLookup(): void
+    {
+        $loginCodeRedis = new ControlledLoginCodeRedisClient(
+            null,
+            -2,
+            [1_780_000_000, 0],
+            new RuntimeException('login-code storage must not be queried for the Unity fixture'),
+        );
+        $loginCodeStore = new LoginCodeStore(
+            $loginCodeRedis,
+            new LoginCodeSettings(
+                readMode: LoginCodeSettings::READ_REDIS,
+                writeMode: LoginCodeSettings::WRITE_REDIS,
+            ),
+            StaticLoginCodeReadiness::ready(),
+        );
+        $rawKey = 'unity-unit-test-key-000000000000000000000001';
+        $fixture = new UnityDevLoginFixture(
+            enabled: true,
+            environment: 'dev',
+            keySha256: hash('sha256', $rawKey),
+        );
+        $authService = new AuthService(
+            $this->jwtService,
+            $this->refreshTokenService,
+            $loginCodeStore,
+            $fixture,
+        );
+
+        $result = $authService->loginCodeOnly('https://example.invalid/?web_' . $rawKey);
+
+        $this->assertTrue($result['success']);
+        $this->assertSame('keyToTokenWithUrl', $result['message']);
+        $this->assertSame(
+            ['success', 'message', 'nickname', 'token', 'user', 'url'],
+            array_keys($result),
+        );
+        $this->assertSame('https://d.dev.xrugc.com', $result['url']);
+        $this->assertSame(UnityDevLoginFixture::USER_ID, $result['user']['id']);
+        $this->assertTrue($result['user']['fixture']);
+        $this->assertSame(UnityDevLoginFixture::FAKE_ACCESS_TOKEN, $result['token']['accessToken']);
+        $this->assertSame(UnityDevLoginFixture::FAKE_REFRESH_TOKEN, $result['token']['refreshToken']);
+        $this->assertSame([], $loginCodeRedis->getKeys);
+    }
+
+    public function testLoginCodeOnlyReturnsNullUrlForCompatibleCodeWithoutFrontendDomain(): void
+    {
+        $rawCode = bin2hex(random_bytes(32));
+        $loginCodeStore = new LoginCodeStore(
+            new ControlledLoginCodeRedisClient(
+                $this->redisCodePayload(userId: 42, issuedAt: 1_780_000_000),
+                240_001,
+                [1_780_000_000, 0],
+            ),
+            new LoginCodeSettings(
+                readMode: LoginCodeSettings::READ_REDIS,
+                writeMode: LoginCodeSettings::WRITE_REDIS,
+            ),
+            StaticLoginCodeReadiness::ready(),
+        );
+        $authService = new AuthService($this->jwtService, $this->refreshTokenService, $loginCodeStore);
+        $issuedRefreshToken = null;
+
+        try {
+            $result = $authService->loginCodeOnly($rawCode);
+            $issuedRefreshToken = $result['token']['refreshToken'];
+
+            $this->assertTrue($result['success']);
+            $this->assertSame('keyToTokenWithUrl', $result['message']);
+            $this->assertArrayHasKey('url', $result);
+            $this->assertNull($result['url']);
+        } finally {
+            if (is_string($issuedRefreshToken)) {
+                $this->refreshTokenService->delete($issuedRefreshToken);
+            }
+        }
+    }
+
+    public function testLoginCodeOnlyRejectsValidRefreshTokenWithoutConsumingIt(): void
+    {
+        $loginCodeRedis = new ControlledLoginCodeRedisClient(
+            null,
+            -2,
+            [1_780_000_000, 0],
+        );
+        $loginCodeStore = new LoginCodeStore(
+            $loginCodeRedis,
+            new LoginCodeSettings(
+                readMode: LoginCodeSettings::READ_REDIS,
+                writeMode: LoginCodeSettings::WRITE_REDIS,
+            ),
+            StaticLoginCodeReadiness::ready(),
+        );
+        $authService = new AuthService($this->jwtService, $this->refreshTokenService, $loginCodeStore);
+        $refreshToken = $this->refreshTokenService->create(42);
+
+        try {
+            try {
+                $authService->loginCodeOnly($refreshToken);
+                $this->fail('A strict login-code endpoint must reject an ordinary refresh token.');
+            } catch (RuntimeException $exception) {
+                $this->assertSame(401, $exception->getCode());
+                $this->assertSame('Login code is invalid or expired.', $exception->getMessage());
+            }
+
+            $this->assertSame(42, $this->refreshTokenService->validate($refreshToken));
+            $this->assertSame([$loginCodeStore->keyFor($refreshToken)], $loginCodeRedis->getKeys);
+        } finally {
+            $this->refreshTokenService->delete($refreshToken);
+        }
+    }
+
+    public function testLoginCodeOnlyReturns401ForExpiredCode(): void
+    {
+        $rawCode = bin2hex(random_bytes(32));
+        $issuedAt = 1_780_000_000 - LoginCodeSettings::ACTIVE_WINDOW_SECONDS;
+        $loginCodeStore = new LoginCodeStore(
+            new ControlledLoginCodeRedisClient(
+                $this->redisCodePayload(userId: 42, issuedAt: $issuedAt),
+                250_000,
+                [1_780_000_000, 0],
+            ),
+            new LoginCodeSettings(
+                readMode: LoginCodeSettings::READ_REDIS,
+                writeMode: LoginCodeSettings::WRITE_REDIS,
+            ),
+            StaticLoginCodeReadiness::ready(),
+        );
+        $authService = new AuthService($this->jwtService, $this->refreshTokenService, $loginCodeStore);
+
+        try {
+            $authService->loginCodeOnly($rawCode);
+            $this->fail('An expired login code must be rejected.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame(401, $exception->getCode());
+            $this->assertSame('Login code is invalid or expired.', $exception->getMessage());
+        }
+    }
+
+    public function testLoginCodeOnlyReturnsRedacted503ForUnavailableStore(): void
+    {
+        $loginCodeStore = new LoginCodeStore(
+            new ControlledLoginCodeRedisClient(
+                null,
+                -2,
+                [1_780_000_000, 0],
+                new RuntimeException('GET auth:login-code:v1:code:sensitive-digest failed'),
+            ),
+            new LoginCodeSettings(
+                readMode: LoginCodeSettings::READ_REDIS,
+                writeMode: LoginCodeSettings::WRITE_REDIS,
+            ),
+            StaticLoginCodeReadiness::ready(),
+        );
+        $authService = new AuthService($this->jwtService, $this->refreshTokenService, $loginCodeStore);
+
+        try {
+            $authService->loginCodeOnly(str_repeat('9', 64));
+            $this->fail('Unavailable login-code storage must fail closed.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame(503, $exception->getCode());
+            $this->assertSame('Login code storage is unavailable.', $exception->getMessage());
+            $this->assertNull($exception->getPrevious());
+            $this->assertStringNotContainsString('sensitive-digest', $exception->getMessage());
+        }
+    }
+
+    public function testLoginCodeOnlyReturns503ForMalformedRedisRecord(): void
+    {
+        $loginCodeStore = new LoginCodeStore(
+            new ControlledLoginCodeRedisClient('{"v":1}', 299_999, [1_780_000_000, 0]),
+            new LoginCodeSettings(
+                readMode: LoginCodeSettings::READ_REDIS,
+                writeMode: LoginCodeSettings::WRITE_REDIS,
+            ),
+            StaticLoginCodeReadiness::ready(),
+        );
+        $authService = new AuthService($this->jwtService, $this->refreshTokenService, $loginCodeStore);
+
+        try {
+            $authService->loginCodeOnly(str_repeat('4', 64));
+            $this->fail('Malformed login-code storage must fail closed.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame(503, $exception->getCode());
+            $this->assertSame('Login code storage is unavailable.', $exception->getMessage());
+        }
+    }
+
+    public function testUnityDevFixtureReturnsParseableFakeTokenUrlAndUserWithoutLoginCodeLookup(): void
+    {
+        $loginCodeRedis = new ControlledLoginCodeRedisClient(
+            null,
+            -2,
+            [1_780_000_000, 0],
+            new RuntimeException('login-code storage must not be queried for the Unity fixture'),
+        );
+        $loginCodeStore = new LoginCodeStore(
+            $loginCodeRedis,
+            new LoginCodeSettings(
+                readMode: LoginCodeSettings::READ_REDIS,
+                writeMode: LoginCodeSettings::WRITE_REDIS,
+            ),
+            StaticLoginCodeReadiness::ready(),
+        );
+        $rawKey = 'unity-unit-test-key-000000000000000000000001';
+        $fixture = new UnityDevLoginFixture(
+            enabled: true,
+            environment: 'dev',
+            keySha256: hash('sha256', $rawKey),
+        );
+        $authService = new AuthService(
+            $this->jwtService,
+            $this->refreshTokenService,
+            $loginCodeStore,
+            $fixture,
+        );
+
+        $result = $authService->keyToTokenWithUrl(
+            'web_' . $rawKey,
+        );
+
+        $this->assertTrue($result['success']);
+        $this->assertSame('keyToTokenWithUrl', $result['message']);
+        $this->assertSame('https://d.dev.xrugc.com', $result['url']);
+        $this->assertSame(UnityDevLoginFixture::USER_ID, $result['user']['id']);
+        $this->assertTrue($result['user']['fixture']);
+        $this->assertSame(UnityDevLoginFixture::FAKE_ACCESS_TOKEN, $result['token']['accessToken']);
+        $this->assertNull($this->jwtService->parseToken($result['token']['accessToken']));
+        $this->assertSame(UnityDevLoginFixture::FAKE_REFRESH_TOKEN, $result['token']['refreshToken']);
+        $this->assertSame([], $loginCodeRedis->getKeys);
+    }
+
+    public function testUnityDevFixtureSupportsContextCompatibilityEndpoint(): void
+    {
+        $rawKey = 'unity-unit-test-key-000000000000000000000001';
+        $fixture = new UnityDevLoginFixture(
+            enabled: true,
+            environment: 'dev',
+            keySha256: hash('sha256', $rawKey),
+        );
+        $authService = new AuthService(
+            $this->jwtService,
+            $this->refreshTokenService,
+            $this->databaseLoginCodeStore,
+            $fixture,
+        );
+        $context = $authService->loginCodeContext('https://example.invalid/?web_' . $rawKey);
+
+        $this->assertSame([
+            'success' => true,
+            'message' => 'loginCodeContext',
+            'frontendDomain' => 'd.dev.xrugc.com',
+        ], $context);
+    }
+
+    public function testUnityDevFixtureDoesNotBypassTokenStoreForDifferentKey(): void
+    {
+        $loginCodeRedis = new ControlledLoginCodeRedisClient(
+            '{"v":1}',
+            299_999,
+            [1_780_000_000, 0],
+        );
+        $loginCodeStore = new LoginCodeStore(
+            $loginCodeRedis,
+            new LoginCodeSettings(
+                readMode: LoginCodeSettings::READ_REDIS,
+                writeMode: LoginCodeSettings::WRITE_REDIS,
+            ),
+            StaticLoginCodeReadiness::ready(),
+        );
+        $fixture = new UnityDevLoginFixture(
+            enabled: true,
+            environment: 'dev',
+            keySha256: hash('sha256', 'unity-unit-test-key-000000000000000000000001'),
+        );
+        $authService = new AuthService(
+            $this->jwtService,
+            $this->refreshTokenService,
+            $loginCodeStore,
+            $fixture,
+        );
+        $differentKey = str_repeat('d', 64);
+
+        try {
+            $authService->keyToTokenWithUrl($differentKey);
+            $this->fail('Expected the ordinary login-code store outcome.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame(503, $exception->getCode());
+            $this->assertSame('Login code storage is unavailable.', $exception->getMessage());
+        }
+
+        $this->assertSame([$loginCodeStore->keyFor($differentKey)], $loginCodeRedis->getKeys);
+    }
+
+    public function testUnityDevFixtureDoesNotBypassContextStoreForDifferentKey(): void
+    {
+        $loginCodeRedis = new ControlledLoginCodeRedisClient(
+            '{"v":1}',
+            299_999,
+            [1_780_000_000, 0],
+        );
+        $loginCodeStore = new LoginCodeStore(
+            $loginCodeRedis,
+            new LoginCodeSettings(
+                readMode: LoginCodeSettings::READ_REDIS,
+                writeMode: LoginCodeSettings::WRITE_REDIS,
+            ),
+            StaticLoginCodeReadiness::ready(),
+        );
+        $fixture = new UnityDevLoginFixture(
+            enabled: true,
+            environment: 'dev',
+            keySha256: hash('sha256', 'unity-unit-test-key-000000000000000000000001'),
+        );
+        $authService = new AuthService(
+            $this->jwtService,
+            $this->refreshTokenService,
+            $loginCodeStore,
+            $fixture,
+        );
+        $differentKey = str_repeat('e', 64);
+
+        try {
+            $authService->loginCodeContext($differentKey);
+            $this->fail('Expected the ordinary login-code store outcome.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame(503, $exception->getCode());
+            $this->assertSame('Login code storage is unavailable.', $exception->getMessage());
+        }
+
+        $this->assertSame([$loginCodeStore->keyFor($differentKey)], $loginCodeRedis->getKeys);
     }
 
     public function testRefreshAccessTokenIsValidJwt(): void

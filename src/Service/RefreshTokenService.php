@@ -19,6 +19,16 @@ use Predis\Client as RedisClient;
  */
 final class RefreshTokenService
 {
+    private const CONSUME_SCRIPT = <<<'LUA'
+local user_id = redis.call('GET', KEYS[1])
+if not user_id then
+    return false
+end
+
+redis.call('DEL', KEYS[1])
+return user_id
+LUA;
+
     /**
      * Redis key prefix for refresh tokens.
      */
@@ -78,6 +88,29 @@ final class RefreshTokenService
         }
 
         return (int) $userId;
+    }
+
+    /**
+     * Atomically read and delete a refresh token.
+     *
+     * This is the rotation boundary: only one concurrent request can consume
+     * a token successfully.
+     */
+    public function consume(string $token): ?int
+    {
+        $result = $this->redis->eval(
+            self::CONSUME_SCRIPT,
+            1,
+            $this->prefix . $token,
+        );
+
+        if (!is_string($result)) {
+            return null;
+        }
+
+        $userId = (int) $result;
+
+        return $userId > 0 ? $userId : null;
     }
 
     /**
