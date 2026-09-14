@@ -95,6 +95,13 @@ jobs:
           YII_ENV: test
         run: composer test
 
+      - name: Verify large snapshot private pagination on MySQL
+        env:
+          TEST_MYSQL_DSN: mysql:host=127.0.0.1;dbname=mrpp
+          TEST_MYSQL_USER: root
+          TEST_MYSQL_PASSWORD: root
+        run: php tests/manual/private_snapshot_large_payload_probe.php
+
   build:
     name: Build Docker image
     runs-on: ubuntu-latest

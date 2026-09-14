@@ -105,7 +105,7 @@ final class SnapshotQueryService
 
         return $this->cache->getOrSet(
             $cacheKey,
-            fn () => $this->paginationService->paginate(
+            fn () => $this->paginateSnapshots(
                 $this->snapshotSearch->searchPrivate($userId, $params),
                 $page,
                 $pageSize,
@@ -134,12 +134,52 @@ final class SnapshotQueryService
 
         return $this->cache->getOrSet(
             $cacheKey,
-            fn () => $this->paginationService->paginate(
+            fn () => $this->paginateSnapshots(
                 $this->snapshotSearch->searchGroup($userId, $params),
                 $page,
                 $pageSize,
             ),
             self::CACHE_TTL,
+        );
+    }
+
+    /**
+     * Sort and paginate IDs before loading large JSON payloads. Sorting snapshot.*
+     * across joins can exhaust MySQL's sort buffer even for a small page.
+     */
+    private function paginateSnapshots(ActiveQuery $query, int $page, int $pageSize): PaginatedResult
+    {
+        $result = $this->paginationService->paginate(
+            (clone $query)->select(['snapshot.id']),
+            $page,
+            $pageSize,
+        );
+        if ($result->items === []) {
+            return $result;
+        }
+
+        $ids = array_map(static fn ($snapshot): int => $snapshot->get('id'), $result->items);
+        $snapshots = $this->createSnapshotQuery()
+            ->andWhere(['snapshot.id' => $ids])
+            ->all();
+        $byId = [];
+        foreach ($snapshots as $snapshot) {
+            $byId[$snapshot->get('id')] = $snapshot;
+        }
+        $items = [];
+        foreach ($ids as $id) {
+            // A snapshot may have been deleted between the two queries.
+            if (isset($byId[$id])) {
+                $items[] = $byId[$id];
+            }
+        }
+
+        return new PaginatedResult(
+            $items,
+            $result->totalCount,
+            $result->pageCount,
+            $result->currentPage,
+            $result->perPage,
         );
     }
 
