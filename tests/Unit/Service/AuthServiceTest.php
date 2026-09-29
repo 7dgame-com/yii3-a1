@@ -6,6 +6,7 @@ namespace App\Tests\Unit\Service;
 
 use App\Model\User;
 use App\Service\AuthService;
+use App\Service\DeviceSnService;
 use App\Service\JwtService;
 use App\Service\LoginCodeSettings;
 use App\Service\LoginCodeStore;
@@ -36,6 +37,7 @@ final class AuthServiceTest extends TestCase
     private LoginCodeStore $databaseLoginCodeStore;
     private RedisClient $redis;
     private ?array $userQueryRow;
+    private string $snKeyFile;
 
     protected function setUp(): void
     {
@@ -87,12 +89,87 @@ final class AuthServiceTest extends TestCase
         ConnectionProvider::set($connection);
 
         $keyFilePath = tempnam(sys_get_temp_dir(), 'jwt_auth_test_');
+        $this->snKeyFile = $keyFilePath;
         file_put_contents($keyFilePath, 'test-secret-key-for-auth-service-testing-minimum');
         $this->jwtService = new JwtService($keyFilePath);
 
         $this->redis = RedisTestClientFactory::create();
         $this->refreshTokenService = new RefreshTokenService($this->redis);
         $this->databaseLoginCodeStore = new LoginCodeStore($this->redis, new LoginCodeSettings());
+    }
+
+    public function testSnLoginAndBothRefreshVersionsKeepSourceAndUseNativeY1Jwt(): void
+    {
+        $sn = $this->createMock(DeviceSnService::class);
+        $sn->expects($this->once())->method('authenticate')->with('0000111122223333', 'device-1', true)
+            ->willReturn(['user_id' => 42, 'device_sn_id' => 17, 'nickname' => 'testuser', 'username' => 'test-user']);
+        $sn->expects($this->once())->method('recordLogin')->with(17);
+        $enabledChecks = 0;
+        $accessChecks = 0;
+        $sn->method('authorizeSession')->willReturnCallback(function ($id, $user, $enabled) use (&$enabledChecks, &$accessChecks): void {
+            self::assertSame(17, $id);
+            self::assertSame(42, $user);
+            $enabled ? $enabledChecks++ : $accessChecks++;
+        });
+        $jwt = new JwtService($this->snKeyFile, null, $sn);
+        $auth = new AuthService($jwt, $this->refreshTokenService, $this->databaseLoginCodeStore, null, $sn);
+        $response = $auth->loginDeviceSn('0000111122223333', 'device-1', true);
+        $this->assertSame('login', $response['message']);
+        $this->assertSame(['id' => 42, 'username' => 'test-user', 'nickname' => 'testuser', 'fixture' => false], $response['user']);
+        for ($i = 0; $i < 4; $i++) {
+            $tokens = $response['token'];
+            $this->assertSame(['accessToken', 'expires', 'refreshToken'], array_keys($tokens));
+            $this->assertSame(['user_id' => 42, 'auth_method' => 'device_sn', 'device_sn_id' => 17], $jwt->parseToken($tokens['accessToken']));
+            $this->assertStringStartsWith('dsn_', $tokens['refreshToken']);
+            $stored = json_decode($this->redis->get('refresh_token:' . $tokens['refreshToken']), true);
+            $this->assertSame(17, $stored['device_sn_id']);
+            $response = $i % 2 === 0 ? $auth->refresh($tokens['refreshToken']) : $auth->refreshTokenOnly($tokens['refreshToken']);
+            $this->assertNull($this->redis->get('refresh_token:' . $tokens['refreshToken']));
+        }
+        $this->assertSame(5, $enabledChecks);
+        $this->assertSame(4, $accessChecks);
+        $auth->logout($response['token']['refreshToken']);
+        $this->assertNull($this->redis->get('refresh_token:' . $response['token']['refreshToken']));
+    }
+
+    public function testDisabledSnCannotRefreshThroughEitherVersion(): void
+    {
+        $sn = $this->createMock(DeviceSnService::class);
+        $sn->method('authorizeSession')->willThrowException(new RuntimeException('SN disabled.', 401));
+        $auth = new AuthService($this->jwtService, $this->refreshTokenService, $this->databaseLoginCodeStore, null, $sn);
+        foreach (['refresh', 'refreshTokenOnly'] as $method) {
+            $token = $this->refreshTokenService->create(42, ['auth_method' => 'device_sn', 'device_sn_id' => 17]);
+            try {
+                $auth->$method($token);
+                $this->fail('Disabled SN must not refresh.');
+            } catch (RuntimeException $exception) {
+                $this->assertSame(401, $exception->getCode());
+            }
+            $this->assertNull($this->redis->get('refresh_token:' . $token));
+        }
+    }
+
+    public function testSnTokenIssuanceFailureLeavesBindingRetryable(): void
+    {
+        $sn = $this->createMock(DeviceSnService::class);
+        $sn->expects($this->exactly(2))->method('authenticate')
+            ->willReturn(['user_id' => 42, 'device_sn_id' => 17, 'nickname' => 'testuser', 'username' => 'test-user']);
+        $sn->expects($this->exactly(2))->method('recordLogin')->willReturnCallback(function (): void {
+            static $calls = 0;
+            if (++$calls === 1) {
+                throw new RuntimeException('Storage unavailable.', 503);
+            }
+        });
+        $auth = new AuthService($this->jwtService, $this->refreshTokenService, $this->databaseLoginCodeStore, null, $sn);
+        try {
+            $auth->loginDeviceSn('0000111122223333', 'device-1', true);
+            $this->fail('Expected the first issuance attempt to fail.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame(503, $exception->getCode());
+        }
+        $response = $auth->loginDeviceSn('0000111122223333', 'device-1', true);
+        $this->assertTrue($response['success']);
+        $auth->logout($response['token']['refreshToken']);
     }
 
     public function testLoginKeepsLegacySuccessEnvelope(): void

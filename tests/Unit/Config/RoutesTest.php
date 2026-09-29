@@ -52,8 +52,18 @@ final class RoutesTest extends TestCase
 
     public function testTotalRouteCount(): void
     {
-        // 8 auth + 7 server + 1 phototype + 4 other v2 + 1 health + 2 swagger = 23
-        $this->assertCount(23, $this->routes);
+        // 11 auth + 7 server + 1 phototype + 4 other v2 + 1 health + 2 swagger = 26
+        $this->assertCount(26, $this->routes);
+    }
+
+    public function testDeviceAuthenticationUsesPublicPostOnlyY1Routes(): void
+    {
+        foreach (['sn-activate', 'sn-login', 'logout'] as $name) {
+            $route = $this->findRouteByName('v1.auth.' . $name);
+            $this->assertNotNull($route);
+            $this->assertSame('/v1/auth/' . $name, $route->getData('pattern'));
+            $this->assertSame(['POST'], $route->getData('methods'));
+        }
     }
 
     // =========================================================================

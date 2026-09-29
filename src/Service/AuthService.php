@@ -38,6 +38,7 @@ final class AuthService
         private RefreshTokenService $refreshTokenService,
         private LoginCodeStore $loginCodeStore,
         private ?UnityDevLoginFixture $unityDevLoginFixture = null,
+        private ?DeviceSnService $deviceSnService = null,
     ) {
     }
 
@@ -120,9 +121,10 @@ final class AuthService
     public function refresh(string $refreshToken): array
     {
         $normalizedToken = $this->normalizeRefreshTokenInput($refreshToken);
-        $userId = $this->refreshTokenService->consume($normalizedToken);
+        $session = $this->refreshTokenService->consumeSession($normalizedToken);
+        $userId = $session['user_id'] ?? null;
 
-        if ($userId === null) {
+        if ($userId === null && !str_starts_with($normalizedToken, 'dsn_')) {
             $loginCode = $this->loginCodeStore->resolve($normalizedToken);
             if ($loginCode->isInfrastructureFailure()) {
                 throw new RuntimeException('Login code storage is unavailable.', 503);
@@ -137,7 +139,9 @@ final class AuthService
             throw new RuntimeException('Refresh token is invalid.', 401);
         }
 
-        return $this->createRefreshResponse($userId);
+        $context = DeviceSnContext::fromArray($session ?? []);
+        $this->authorizeDeviceSession($userId, $context);
+        return $this->createRefreshResponse($userId, $context);
     }
 
     /**
@@ -149,13 +153,61 @@ final class AuthService
     public function refreshTokenOnly(string $refreshToken): array
     {
         $normalizedToken = trim($refreshToken);
-        $userId = $this->refreshTokenService->consume($normalizedToken);
+        $session = $this->refreshTokenService->consumeSession($normalizedToken);
+        $userId = $session['user_id'] ?? null;
 
         if ($userId === null || $userId <= 0) {
             throw new RuntimeException('Refresh token is invalid.', 401);
         }
 
-        return $this->createStrictRefreshResponse($userId);
+        $context = DeviceSnContext::fromArray($session ?? []);
+        $this->authorizeDeviceSession($userId, $context);
+        return $this->createStrictRefreshResponse($userId, $context);
+    }
+
+    /** SN chooses identity; the existing y1 issuer still owns both tokens. */
+    public function loginDeviceSn(string $sn, string $uuid, bool $activate): array
+    {
+        if ($this->deviceSnService === null) {
+            throw new RuntimeException('Device SN authentication is unavailable.', 503);
+        }
+        $identity = $this->deviceSnService->authenticate($sn, $uuid, $activate);
+        $context = ['auth_method' => 'device_sn', 'device_sn_id' => $identity['device_sn_id']];
+        $this->authorizeDeviceSession($identity['user_id'], $context);
+        $tokens = $this->generateTokenPair($identity['user_id'], $context);
+        try {
+            $this->deviceSnService->recordLogin($identity['device_sn_id']);
+        } catch (\Throwable $exception) {
+            $this->refreshTokenService->delete($tokens['refreshToken']);
+            throw $exception;
+        }
+        return [
+            'success' => true,
+            'message' => 'login',
+            'nickname' => $identity['nickname'],
+            'token' => $tokens,
+            'user' => [
+                'id' => $identity['user_id'], 'username' => $identity['username'],
+                'nickname' => $identity['nickname'], 'fixture' => false,
+            ],
+        ];
+    }
+
+    public function logout(string $refreshToken): array
+    {
+        $this->refreshTokenService->delete(trim($refreshToken));
+        return ['success' => true, 'message' => 'logout'];
+    }
+
+    private function authorizeDeviceSession(int $userId, array $context): void
+    {
+        if ($context === []) {
+            return;
+        }
+        if ($this->deviceSnService === null) {
+            throw new RuntimeException('Device SN authentication is unavailable.', 503);
+        }
+        $this->deviceSnService->authorizeSession($context['device_sn_id'], $userId, true);
     }
 
     /**
@@ -362,7 +414,7 @@ final class AuthService
     }
 
     /** @return array{success: true, message: string, nickname: mixed, token: array} */
-    private function createRefreshResponse(int $userId): array
+    private function createRefreshResponse(int $userId, array $context = []): array
     {
         $user = (new ActiveQuery(User::class))
             ->where(['id' => $userId])
@@ -376,7 +428,7 @@ final class AuthService
             'success' => true,
             'message' => 'refresh',
             'nickname' => $user->get('nickname') ?? '',
-            'token' => $this->generateTokenPair($userId),
+            'token' => $this->generateTokenPair($userId, $context),
         ];
     }
 
@@ -386,7 +438,7 @@ final class AuthService
      *
      * @return array{success: true, message: string, nickname: mixed, token: array, user: array}
      */
-    private function createStrictRefreshResponse(int $userId): array
+    private function createStrictRefreshResponse(int $userId, array $context = []): array
     {
         $user = (new ActiveQuery(User::class))
             ->where(['id' => $userId])
@@ -396,17 +448,17 @@ final class AuthService
             throw new RuntimeException('User is not found.', 400);
         }
 
-        return $this->createStrictClientResponse($user);
+        return $this->createStrictClientResponse($user, $context);
     }
 
     /** @return array{success: true, message: string, nickname: mixed, token: array, user: array} */
-    private function createStrictClientResponse(User $user): array
+    private function createStrictClientResponse(User $user, array $context = []): array
     {
         return [
             'success' => true,
             'message' => 'keyToTokenWithUrl',
             'nickname' => $user->get('nickname') ?? '',
-            'token' => $this->generateTokenPair((int) $user->get('id')),
+            'token' => $this->generateTokenPair((int) $user->get('id'), $context),
             'user' => $this->createClientUser($user),
         ];
     }
@@ -428,10 +480,10 @@ final class AuthService
      * @param int $userId The user ID to generate tokens for.
      * @return array{accessToken: string, refreshToken: string}
      */
-    private function generateTokenPair(int $userId): array
+    private function generateTokenPair(int $userId, array $context = []): array
     {
-        $accessToken = $this->jwtService->generateToken($userId);
-        $refreshToken = $this->refreshTokenService->create($userId);
+        $accessToken = $this->jwtService->generateToken($userId, $context);
+        $refreshToken = $this->refreshTokenService->create($userId, $context);
 
         $now = new \DateTimeImmutable('now', new \DateTimeZone('Asia/Shanghai'));
         $expires = $now->modify('+3 hour');

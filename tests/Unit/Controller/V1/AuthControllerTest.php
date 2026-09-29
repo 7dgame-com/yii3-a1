@@ -6,6 +6,8 @@ namespace App\Tests\Unit\Controller\V1;
 
 use App\Controller\V1\AuthController;
 use App\Service\AuthService;
+use App\Service\DeviceSnService;
+use App\Service\DeviceSnRateLimiter;
 use App\Service\JwtService;
 use App\Service\LoginCodeSettings;
 use App\Service\LoginCodeStore;
@@ -17,6 +19,7 @@ use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Psr\Http\Message\StreamInterface;
+use RuntimeException;
 use Yiisoft\Db\Connection\ConnectionInterface;
 use Yiisoft\Db\Connection\ConnectionProvider;
 use Yiisoft\Db\Command\CommandInterface;
@@ -115,6 +118,72 @@ final class AuthControllerTest extends TestCase
         $this->assertNotEmpty($d['token']['accessToken']);
         $this->assertNotEmpty($d['token']['refreshToken']);
         $this->refreshTokenService->delete($d['token']['refreshToken']);
+    }
+
+    public function testSnEndpointsNormalizeCredentialsAndIgnoreCallerSelectedIdentity(): void
+    {
+        $sn = $this->createMock(DeviceSnService::class);
+        $sn->expects($this->exactly(2))->method('authenticate')
+            ->willReturnCallback(function ($code, $uuid, $activate) {
+                self::assertSame('0000111122223333', $code);
+                self::assertSame('device-1', $uuid);
+                return ['user_id' => 42, 'device_sn_id' => 7, 'nickname' => 'testuser', 'username' => 'testuser'];
+            });
+        $limiter = $this->createMock(DeviceSnRateLimiter::class);
+        $limiter->expects($this->exactly(2))->method('consumeIp');
+        $limiter->expects($this->exactly(2))->method('consumeCredentials')->with('0000111122223333', 'device-1');
+        $auth = new AuthService($this->jwtService, $this->refreshTokenService, $this->loginCodeStore, null, $sn);
+        $controller = new AuthController($auth, $this->responseFactory, $this->streamFactory, $limiter);
+        $body = null; $headers = [];
+        $this->hdrBody($headers, $body);
+        foreach (['snActivate', 'snLogin'] as $action) {
+            $controller->$action($this->req(['sn' => '0000-1111-2222-3333', 'uuid' => ' Device-1 ', 'user_id' => 999, 'device_sn_id' => 999]));
+            $result = json_decode($body, true);
+            $this->assertTrue($result['success']);
+            $this->assertSame(42, $result['user']['id']);
+            $this->assertSame('no-store', $headers['Cache-Control']);
+            $auth->logout($result['token']['refreshToken']);
+        }
+    }
+
+    public function testInvalidSnStillConsumesIpAllowanceWithoutAuthenticating(): void
+    {
+        $limiter = $this->createMock(DeviceSnRateLimiter::class);
+        $limiter->expects($this->exactly(3))->method('consumeIp');
+        $limiter->expects($this->never())->method('consumeCredentials');
+        $controller = new AuthController($this->authService, $this->responseFactory, $this->streamFactory, $limiter);
+        $body = null; $status = null;
+        $this->errResp($body, $status);
+        foreach ([['sn' => str_repeat('0', 32), 'uuid' => 'device-1'], ['sn' => [], 'uuid' => 'device-1'],
+            ['sn' => '0000111122223333', 'uuid' => str_repeat('a', 256)]] as $payload) {
+            $controller->snActivate($this->req($payload));
+            $this->assertSame(400, $status);
+        }
+    }
+
+    public function testSnRateLimitReturnsRetryAfterAndNoStore(): void
+    {
+        $limiter = $this->createMock(DeviceSnRateLimiter::class);
+        $limiter->method('consumeIp')->willThrowException(new RuntimeException('Too many attempts.', 429));
+        $controller = new AuthController($this->authService, $this->responseFactory, $this->streamFactory, $limiter);
+        $body = null; $headers = [];
+        $this->hdrBody($headers, $body);
+        $controller->snLogin($this->req(['sn' => '0000111122223333', 'uuid' => 'device-1']));
+        $this->assertSame(429, json_decode($body, true)['status']);
+        $this->assertSame('60', $headers['Retry-After']);
+        $this->assertSame('no-store', $headers['Cache-Control']);
+    }
+
+    public function testLogoutRevokesOnlyTheSubmittedRefreshToken(): void
+    {
+        $token = $this->refreshTokenService->create(42, ['auth_method' => 'device_sn', 'device_sn_id' => 7]);
+        $other = $this->refreshTokenService->create(42);
+        $body = null;
+        $this->okResp($body);
+        $this->controller->logout($this->req(['refreshToken' => $token]));
+        $this->assertSame(['success' => true, 'message' => 'logout'], json_decode($body, true));
+        $this->assertNull($this->refreshTokenService->consumeSession($token));
+        $this->assertSame(42, $this->refreshTokenService->consume($other));
     }
 
     public function testRefreshReturns401OnInvalidToken(): void
