@@ -61,7 +61,7 @@ final class AuthController
         $body = $request->getParsedBody();
         $refreshToken = is_array($body) ? ($body['refreshToken'] ?? null) : null;
 
-        if (!is_string($refreshToken) || trim($refreshToken) === '') {
+        if (!is_string($refreshToken) || trim($refreshToken) === '' || strlen($refreshToken) > 256) {
             return $this->createErrorResponse(400, 'refreshToken is required');
         }
 
@@ -70,7 +70,10 @@ final class AuthController
                 $this->authService->refreshTokenOnly($refreshToken),
             );
         } catch (RuntimeException $e) {
-            return $this->createErrorResponse($e->getCode() ?: 400, $e->getMessage());
+            $status = in_array($e->getCode(), [400, 401, 503], true) ? $e->getCode() : 503;
+            return $this->createErrorResponse($status, $status === 503 ? 'Token storage is unavailable.' : $e->getMessage());
+        } catch (\Throwable) {
+            return $this->createErrorResponse(503, 'Token storage is unavailable.');
         }
     }
 
@@ -103,6 +106,8 @@ final class AuthController
 
         return $this->responseFactory->createResponse($statusCode)
             ->withHeader('Content-Type', 'application/json')
+            ->withHeader('Cache-Control', 'no-store')
+            ->withHeader('Pragma', 'no-cache')
             ->withBody($stream);
     }
 

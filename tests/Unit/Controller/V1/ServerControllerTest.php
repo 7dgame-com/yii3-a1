@@ -631,6 +631,7 @@ final class ServerControllerTest extends TestCase
     {
         $query = $this->createMock(ActiveQuery::class);
         $query->method('count')->willReturn((string) $totalCount);
+        $query->method('select')->willReturnSelf();
         $query->method('offset')->willReturnSelf();
         $query->method('limit')->willReturnSelf();
         $query->method('all')->willReturn($items);

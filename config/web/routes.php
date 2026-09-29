@@ -31,6 +31,18 @@ return [
         ->action([AuthController::class, 'login'])
         ->name('v1.auth.login'),
 
+    Route::post('/v1/auth/sn-activate')
+        ->action([AuthController::class, 'snActivate'])
+        ->name('v1.auth.sn-activate'),
+
+    Route::post('/v1/auth/sn-login')
+        ->action([AuthController::class, 'snLogin'])
+        ->name('v1.auth.sn-login'),
+
+    Route::post('/v1/auth/logout')
+        ->action([AuthController::class, 'logout'])
+        ->name('v1.auth.logout'),
+
     Route::post('/v1/auth/refresh')
         ->action([AuthController::class, 'refresh'])
         ->name('v1.auth.refresh'),

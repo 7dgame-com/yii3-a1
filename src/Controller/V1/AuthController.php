@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Controller\V1;
 
 use App\Service\AuthService;
+use App\Service\DeviceSnCredential;
+use App\Service\DeviceSnRateLimiter;
+use App\Service\DeviceSnService;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -17,6 +20,9 @@ use RuntimeException;
  * Handles user authentication endpoints:
  * - POST /v1/auth/login: Authenticate with username/password
  * - POST /v1/auth/refresh: Refresh token pair using a refresh token
+ * - POST /v1/auth/sn-activate: Bind SN + UUID and issue the native token pair
+ * - POST /v1/auth/sn-login: Authenticate an existing SN + UUID binding
+ * - POST /v1/auth/logout: Revoke the supplied refresh token
  * - POST /v1/auth/key-to-token: Authenticate via a linked key
  * - POST /v1/auth/key-to-token-with-url: Authenticate and return the originating frontend URL
  * - POST /v1/auth/login-code-context: Read optional white-label metadata
@@ -32,7 +38,59 @@ final class AuthController
         private readonly AuthService $authService,
         private readonly ResponseFactoryInterface $responseFactory,
         private readonly StreamFactoryInterface $streamFactory,
+        private readonly ?DeviceSnRateLimiter $deviceSnRateLimiter = null,
     ) {
+    }
+
+    public function snActivate(ServerRequestInterface $request): ResponseInterface
+    {
+        return $this->deviceLogin($request, true);
+    }
+
+    public function snLogin(ServerRequestInterface $request): ResponseInterface
+    {
+        return $this->deviceLogin($request, false);
+    }
+
+    private function deviceLogin(ServerRequestInterface $request, bool $activate): ResponseInterface
+    {
+        try {
+            if ($this->deviceSnRateLimiter === null) {
+                throw new RuntimeException('Device SN authentication is unavailable.', 503);
+            }
+            // Forwarded headers are not trustworthy without an explicit proxy policy.
+            $ip = (string) ($request->getServerParams()['REMOTE_ADDR'] ?? 'unknown');
+            $this->deviceSnRateLimiter->consumeIp($ip);
+            $body = $request->getParsedBody();
+            if (!is_array($body) || !is_string($body['sn'] ?? null) || !is_string($body['uuid'] ?? null)
+                || strlen($body['uuid']) > 255) {
+                return $this->createErrorResponse(400, 'sn and uuid must be bounded strings.');
+            }
+            $sn = DeviceSnCredential::normalize($body['sn']);
+            $uuid = DeviceSnService::normalizeUuid($body['uuid']);
+            $this->deviceSnRateLimiter->consumeCredentials($sn, $uuid);
+            return $this->createJsonResponse($this->authService->loginDeviceSn($sn, $uuid, $activate));
+        } catch (RuntimeException $e) {
+            $status = in_array($e->getCode(), [400, 401, 409, 429, 503], true) ? $e->getCode() : 503;
+            return $this->createErrorResponse($status, $status === 503 ? 'Device SN authentication is unavailable.' : $e->getMessage());
+        } catch (\Throwable) {
+            return $this->createErrorResponse(503, 'Device SN authentication is unavailable.');
+        }
+    }
+
+    /** Revoke only the supplied y1 refresh credential; SN binding is retained. */
+    public function logout(ServerRequestInterface $request): ResponseInterface
+    {
+        $body = $request->getParsedBody();
+        $token = is_array($body) ? ($body['refreshToken'] ?? null) : null;
+        if (!is_string($token) || trim($token) === '' || strlen($token) > 256) {
+            return $this->createErrorResponse(400, 'refreshToken is required');
+        }
+        try {
+            return $this->createJsonResponse($this->authService->logout($token));
+        } catch (\Throwable) {
+            return $this->createErrorResponse(503, 'Token storage is unavailable.');
+        }
     }
 
     /**
@@ -78,7 +136,7 @@ final class AuthController
         $body = $request->getParsedBody();
         $refreshToken = $body['refreshToken'] ?? '';
 
-        if (empty($refreshToken)) {
+        if (!is_string($refreshToken) || trim($refreshToken) === '' || strlen($refreshToken) > 2048) {
             return $this->createErrorResponse(400, 'refreshToken is required');
         }
 
@@ -87,7 +145,10 @@ final class AuthController
 
             return $this->createJsonResponse($result);
         } catch (RuntimeException $e) {
-            return $this->createErrorResponse($e->getCode() ?: 400, $e->getMessage());
+            $status = in_array($e->getCode(), [400, 401, 503], true) ? $e->getCode() : 503;
+            return $this->createErrorResponse($status, $status === 503 ? 'Token storage is unavailable.' : $e->getMessage());
+        } catch (\Throwable) {
+            return $this->createErrorResponse(503, 'Token storage is unavailable.');
         }
     }
 
@@ -177,6 +238,8 @@ final class AuthController
 
         return $this->responseFactory->createResponse($statusCode)
             ->withHeader('Content-Type', 'application/json')
+            ->withHeader('Cache-Control', 'no-store')
+            ->withHeader('Pragma', 'no-cache')
             ->withBody($stream);
     }
 
@@ -193,12 +256,13 @@ final class AuthController
         $nameMap = [400 => 'Bad Request', 401 => 'Unauthorized', 403 => 'Forbidden', 404 => 'Not Found'];
         $typeMap = [400 => 'yii\\web\\BadRequestHttpException', 401 => 'yii\\web\\UnauthorizedHttpException', 403 => 'yii\\web\\ForbiddenHttpException', 404 => 'yii\\web\\NotFoundHttpException'];
 
-        return $this->createJsonResponse([
+        $response = $this->createJsonResponse([
             'name' => $nameMap[$statusCode] ?? 'Error',
             'message' => $message,
             'code' => 0,
             'status' => $statusCode,
             'type' => $typeMap[$statusCode] ?? 'yii\\web\\HttpException',
         ], $statusCode);
+        return $statusCode === 429 ? $response->withHeader('Retry-After', '60') : $response;
     }
 }

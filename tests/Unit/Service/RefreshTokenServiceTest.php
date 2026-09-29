@@ -51,6 +51,43 @@ final class RefreshTokenServiceTest extends TestCase
         $this->assertIsString($token);
     }
 
+    public function testDeviceSessionRoundTripsWithoutAnIdentityOnlyEscape(): void
+    {
+        $context = ['auth_method' => 'device_sn', 'device_sn_id' => 19];
+        $token = $this->service->create(42, $context);
+        $this->assertStringStartsWith('dsn_', $token);
+        $this->assertNull($this->service->validate($token));
+        $this->assertSame(['user_id' => 42] + $context, $this->service->consumeSession($token));
+        $this->assertNull($this->service->consumeSession($token));
+        $token = $this->service->create(42, $context);
+        $this->expectExceptionCode(401);
+        $this->service->consume($token);
+    }
+
+    public function testDeviceSessionCannotLoseItsSourceOrUseANumericLegacyRecord(): void
+    {
+        foreach (['42', '{"version":1,"user_id":42}', '{"version":1,"user_id":42,"auth_method":"device_sn"}',
+            '{"version":1,"user_id":42,"auth_method":"device_sn","device_sn_id":"19"}'] as $value) {
+            $token = 'dsn_' . bin2hex(random_bytes(32));
+            $this->redis->setex('refresh_token:' . $token, 60, $value);
+            try {
+                $this->service->consumeSession($token);
+                $this->fail('Corrupt device session must be rejected.');
+            } catch (\RuntimeException $e) {
+                $this->assertSame(401, $e->getCode());
+            }
+        }
+    }
+
+    public function testDeleteUserSessionsAlsoDeletesDeviceSessionRecords(): void
+    {
+        $token = $this->service->create(42, ['auth_method' => 'device_sn', 'device_sn_id' => 19]);
+        $other = $this->service->create(43, ['auth_method' => 'device_sn', 'device_sn_id' => 20]);
+        $this->service->deleteByUserId(42);
+        $this->assertNull($this->redis->get('refresh_token:' . $token));
+        $this->assertSame(43, $this->service->consumeSession($other)['user_id']);
+    }
+
     /**
      * Test that create() returns a 64-character hex string (32 bytes).
      * Validates: Requirement 3.7
