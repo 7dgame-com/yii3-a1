@@ -57,6 +57,12 @@ php -S 0.0.0.0:8080 -t public
 | `REDIS_DB` | Redis 数据库编号 | `0` |
 | `JWT_KEY` | JWT 密钥文件路径 | - |
 
+## Unity / Rokid SN 认证
+
+[SN 接口与部署边界](docs/device-sn.md) 说明激活、登录、两种刷新和退出协议。
+网页分发管理继续使用主 API；y1 共享既有权威 `device_sn` 表，复用本服务 HS256/Redis
+会话，无需新增表或 AES 密钥。本次 SN 改造目前仅在本地实现，尚未部署开发或生产。
+
 ## API 端点
 
 ### 认证 (V1)
@@ -64,6 +70,9 @@ php -S 0.0.0.0:8080 -t public
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/v1/auth/login` | 用户名密码登录，返回 accessToken + refreshToken |
+| POST | `/v1/auth/sn-activate` | 16 位 SN + 稳定 UUID 激活并获取现有 y1 格式 Token |
+| POST | `/v1/auth/sn-login` | 已激活的同一对 SN + UUID 登录 |
+| POST | `/v1/auth/logout` | 撤销传入的 y1 Refresh Token，不解除 SN 绑定 |
 | POST | `/v1/auth/refresh` | 兼容入口：接受 refreshToken，也兼容有效 loginCode；成功响应保持原有 `message: "refresh"` 格式 |
 | POST | `/v1/auth/key-to-token` | 关联 key 换取令牌 |
 | POST | `/v1/auth/key-to-token-with-url` | 关联 key 换取令牌，并在有域名上下文时返回前端 URL |
@@ -80,7 +89,8 @@ php -S 0.0.0.0:8080 -t public
 `success`、`message`、`nickname`、`token`、`user` 五个核心字段，且 `message` 固定为
 `keyToTokenWithUrl`。只有 `/v2/auth/login-code` 额外返回 `url`：有可信白牌域名上下文时
 为 HTTPS URL，没有域名上下文时为 `null`；`/v2/auth/login` 与 `/v2/auth/refresh-token`
-不返回 `url`。
+不返回 `url`。两种刷新入口都持续保留并核验 SN 会话来源；存储不可用时返回503，
+不能把 SN 凭据降级为普通会话或登录码。
 旧 `/v1/auth/login` 与 `/v1/auth/refresh` 的路径和成功响应契约保持不变；
 不再提供 `/v1/auth/refresh-token` 与 `/v1/auth/login-code`。
 

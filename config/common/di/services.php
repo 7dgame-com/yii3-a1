@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Search\SnapshotSearch;
 use App\Service\AuthService;
+use App\Service\DeviceSnService;
+use App\Service\DeviceSnRateLimiter;
 use App\Search\TagsSearch;
 use App\Service\HealthCheckService;
 use App\Service\JwtService;
@@ -30,6 +32,20 @@ use Yiisoft\Db\Connection\ConnectionInterface;
  * Business services DI configuration.
  */
 return [
+    \App\Controller\V1\AuthController::class => [
+        'class' => \App\Controller\V1\AuthController::class,
+        '__construct()' => [
+            'deviceSnRateLimiter' => \Yiisoft\Definitions\Reference::to(DeviceSnRateLimiter::class),
+        ],
+    ],
+    DeviceSnService::class => [
+        'class' => DeviceSnService::class,
+        '__construct()' => ['db' => \Yiisoft\Definitions\Reference::to(ConnectionInterface::class)],
+    ],
+    DeviceSnRateLimiter::class => [
+        'class' => DeviceSnRateLimiter::class,
+        '__construct()' => ['redis' => \Yiisoft\Definitions\Reference::to(RedisClient::class)],
+    ],
     LoginCodeSettings::class => [
         'class' => LoginCodeSettings::class,
         '__construct()' => [
@@ -96,6 +112,7 @@ return [
             'refreshTokenService' => \Yiisoft\Definitions\Reference::to(RefreshTokenService::class),
             'loginCodeStore' => \Yiisoft\Definitions\Reference::to(LoginCodeStore::class),
             'unityDevLoginFixture' => \Yiisoft\Definitions\Reference::to(UnityDevLoginFixture::class),
+            'deviceSnService' => \Yiisoft\Definitions\Reference::to(DeviceSnService::class),
         ],
     ],
     SnapshotQueryService::class => [

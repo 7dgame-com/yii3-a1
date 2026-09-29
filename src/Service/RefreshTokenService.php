@@ -10,10 +10,10 @@ use Predis\Client as RedisClient;
  * Manages RefreshToken storage in Redis.
  *
  * Replaces Yii2's Redis ActiveRecord for RefreshToken.
- * Uses Predis\Client to store token → userId mappings with a configurable TTL.
+ * Uses Predis\Client to store token sessions with a configurable TTL.
  *
  * Key format: refresh_token:{token}
- * Value: userId (as string)
+ * Value: userId (legacy string), or versioned JSON with userId and SN provenance.
  *
  * @see Requirements 3.2, 3.7
  */
@@ -53,19 +53,20 @@ LUA;
      * Create a new refresh token for the given user ID.
      *
      * Generates a cryptographically secure random token string,
-     * stores it in Redis mapping token → userId with a TTL of 30 days.
+     * stores its identity and optional SN provenance with a TTL of 30 days.
      *
      * @param int $userId The user ID to associate with the token.
      * @return string The generated refresh token string.
      */
-    public function create(int $userId): string
+    public function create(int $userId, array $authContext = []): string
     {
-        $token = bin2hex(random_bytes($this->tokenLength));
+        $context = DeviceSnContext::fromArray($authContext);
+        $token = ($context === [] ? '' : 'dsn_') . bin2hex(random_bytes($this->tokenLength));
 
         $this->redis->setex(
             $this->prefix . $token,
             $this->ttl,
-            (string) $userId,
+            $context === [] ? (string) $userId : json_encode(['version' => 1, 'user_id' => $userId] + $context, JSON_THROW_ON_ERROR),
         );
 
         return $token;
@@ -87,7 +88,9 @@ LUA;
             return null;
         }
 
-        return (int) $userId;
+        $session = $this->decodeSession($userId, $token);
+        // Identity-only consumers must not shed SN restrictions.
+        return isset($session['auth_method']) ? null : ($session['user_id'] ?? null);
     }
 
     /**
@@ -97,6 +100,16 @@ LUA;
      * a token successfully.
      */
     public function consume(string $token): ?int
+    {
+        $session = $this->consumeSession($token);
+        if (isset($session['auth_method'])) {
+            throw new \RuntimeException('Device session requires provenance-aware refresh.', 401);
+        }
+        return $session['user_id'] ?? null;
+    }
+
+    /** Atomically rotate both identity and authentication provenance. */
+    public function consumeSession(string $token): ?array
     {
         $result = $this->redis->eval(
             self::CONSUME_SCRIPT,
@@ -108,9 +121,25 @@ LUA;
             return null;
         }
 
-        $userId = (int) $result;
+        return $this->decodeSession($result, $token);
+    }
 
-        return $userId > 0 ? $userId : null;
+    private function decodeSession(string $value, string $token): ?array
+    {
+        if (preg_match('/^[1-9][0-9]*$/D', $value) === 1 && !str_starts_with($token, 'dsn_')) {
+            return ['user_id' => (int) $value];
+        }
+        $session = json_decode($value, true);
+        if (!is_array($session) || ($session['version'] ?? null) !== 1
+            || !is_int($session['user_id'] ?? null) || $session['user_id'] <= 0
+            || !str_starts_with($token, 'dsn_')) {
+            throw new \RuntimeException('Refresh token is invalid.', 401);
+        }
+        $context = DeviceSnContext::fromArray($session);
+        if ($context === []) {
+            throw new \RuntimeException('Refresh token is invalid.', 401);
+        }
+        return ['user_id' => $session['user_id']] + $context;
     }
 
     /**
@@ -144,7 +173,9 @@ LUA;
             if (!empty($keys)) {
                 foreach ($keys as $key) {
                     $value = $this->redis->get($key);
-                    if ($value !== null && (int) $value === $userId) {
+                    $stored = is_string($value) ? json_decode($value, true) : null;
+                    $owner = is_array($stored) ? ($stored['user_id'] ?? null) : $value;
+                    if ($owner !== null && (int) $owner === $userId) {
                         $this->redis->del($key);
                     }
                 }

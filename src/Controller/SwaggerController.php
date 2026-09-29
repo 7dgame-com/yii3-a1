@@ -37,6 +37,147 @@ use Psr\Http\Message\StreamFactoryInterface;
     bearerFormat: 'JWT',
     scheme: 'bearer',
 )]
+#[OA\Schema(
+    schema: 'DeviceSnCredentials',
+    required: ['sn', 'uuid'],
+    properties: [
+        new OA\Property(
+            property: 'sn',
+            description: 'Exactly 16 Crockford Base32 characters after removing ASCII whitespace and hyphens and converting to uppercase. Historical 32-character codes are rejected.',
+            type: 'string',
+            maxLength: 128,
+            minLength: 16,
+            writeOnly: true,
+        ),
+        new OA\Property(
+            property: 'uuid',
+            description: 'Stable device identifier, trimmed and lowercased to [a-z0-9][a-z0-9._:-]{0,254}. Does not require RFC 4122 format.',
+            type: 'string',
+            maxLength: 255,
+            minLength: 1,
+        ),
+    ],
+    type: 'object',
+)]
+#[OA\Schema(
+    schema: 'DeviceSnAuthResult',
+    required: ['success', 'message', 'nickname', 'token', 'user'],
+    properties: [
+        new OA\Property(property: 'success', type: 'boolean', example: true),
+        new OA\Property(property: 'message', type: 'string', example: 'login'),
+        new OA\Property(property: 'nickname', type: 'string'),
+        new OA\Property(
+            property: 'token',
+            required: ['accessToken', 'expires', 'refreshToken'],
+            properties: [
+                new OA\Property(property: 'accessToken', description: 'Existing y1 HS256 JWT carrying uid, auth_method=device_sn and device_sn_id; maximum lifetime 10800 seconds.', type: 'string'),
+                new OA\Property(property: 'expires', description: 'Access expiry in Asia/Shanghai, formatted yyyy-MM-dd HH:mm:ss.', type: 'string', example: '2026-09-29 16:00:00'),
+                new OA\Property(property: 'refreshToken', description: 'Opaque y1 refresh credential. Both refresh routes preserve and revalidate the SN source.', type: 'string'),
+            ],
+            type: 'object',
+        ),
+        new OA\Property(
+            property: 'user',
+            required: ['id', 'username', 'nickname', 'fixture'],
+            properties: [
+                new OA\Property(property: 'id', type: 'integer'),
+                new OA\Property(property: 'username', type: 'string'),
+                new OA\Property(property: 'nickname', type: 'string'),
+                new OA\Property(property: 'fixture', type: 'boolean', example: false),
+            ],
+            type: 'object',
+        ),
+    ],
+    type: 'object',
+)]
+#[OA\Schema(
+    schema: 'DeviceSnAuthError',
+    required: ['name', 'message', 'code', 'status', 'type'],
+    properties: [
+        new OA\Property(property: 'name', type: 'string'),
+        new OA\Property(property: 'message', type: 'string'),
+        new OA\Property(property: 'code', type: 'integer', example: 0),
+        new OA\Property(property: 'status', type: 'integer'),
+        new OA\Property(property: 'type', type: 'string'),
+    ],
+    type: 'object',
+)]
+#[OA\Post(
+    path: '/v1/auth/sn-activate',
+    operationId: 'v1AuthSnActivate',
+    summary: 'Activate a device SN and issue y1 tokens',
+    description: 'Binds the stable UUID in the shared device_sn table. The same pair is idempotent; other bindings cannot be replaced. Binding survives a later token-issuance failure. Only eligible ordinary accounts are accepted. Responses use Cache-Control: no-store and Pragma: no-cache. No previous Bearer token is required.',
+    security: [],
+    tags: ['Authentication'],
+    requestBody: new OA\RequestBody(required: true, content: new OA\JsonContent(ref: '#/components/schemas/DeviceSnCredentials')),
+    responses: [
+        new OA\Response(response: 200, description: 'Authenticated with the device SN source', content: new OA\JsonContent(ref: '#/components/schemas/DeviceSnAuthResult')),
+        new OA\Response(response: 400, description: 'SN or UUID format is invalid', content: new OA\JsonContent(ref: '#/components/schemas/DeviceSnAuthError')),
+        new OA\Response(response: 401, description: 'SN, account or device authorization is invalid', content: new OA\JsonContent(ref: '#/components/schemas/DeviceSnAuthError')),
+        new OA\Response(response: 409, description: 'Activation is required, a binding conflicts, or a concurrent binding must be retried with the same pair', content: new OA\JsonContent(ref: '#/components/schemas/DeviceSnAuthError')),
+        new OA\Response(
+            response: 429,
+            description: 'Device authentication rate limit exceeded',
+            headers: [new OA\Header(header: 'Retry-After', description: 'Delay in seconds before retrying.', schema: new OA\Schema(type: 'integer', example: 60))],
+            content: new OA\JsonContent(ref: '#/components/schemas/DeviceSnAuthError'),
+        ),
+        new OA\Response(response: 503, description: 'Authoritative storage, rate limiting or token issuance is unavailable', content: new OA\JsonContent(ref: '#/components/schemas/DeviceSnAuthError')),
+    ],
+)]
+#[OA\Post(
+    path: '/v1/auth/sn-login',
+    operationId: 'v1AuthSnLogin',
+    summary: 'Log in an activated device using SN and UUID',
+    description: 'Requires the existing SN and UUID binding; does not implicitly activate. Disabled or account-deleted SNs cannot log in. Uses the same y1 HS256 issuer as username/password login. Responses use Cache-Control: no-store and Pragma: no-cache. No previous Bearer token is required.',
+    security: [],
+    tags: ['Authentication'],
+    requestBody: new OA\RequestBody(required: true, content: new OA\JsonContent(ref: '#/components/schemas/DeviceSnCredentials')),
+    responses: [
+        new OA\Response(response: 200, description: 'Authenticated with the device SN source', content: new OA\JsonContent(ref: '#/components/schemas/DeviceSnAuthResult')),
+        new OA\Response(response: 400, description: 'SN or UUID format is invalid', content: new OA\JsonContent(ref: '#/components/schemas/DeviceSnAuthError')),
+        new OA\Response(response: 401, description: 'SN, account or device authorization is invalid', content: new OA\JsonContent(ref: '#/components/schemas/DeviceSnAuthError')),
+        new OA\Response(response: 409, description: 'Activation is required, a binding conflicts, or a concurrent binding must be retried with the same pair', content: new OA\JsonContent(ref: '#/components/schemas/DeviceSnAuthError')),
+        new OA\Response(
+            response: 429,
+            description: 'Device authentication rate limit exceeded',
+            headers: [new OA\Header(header: 'Retry-After', description: 'Delay in seconds before retrying.', schema: new OA\Schema(type: 'integer', example: 60))],
+            content: new OA\JsonContent(ref: '#/components/schemas/DeviceSnAuthError'),
+        ),
+        new OA\Response(response: 503, description: 'Authoritative storage, rate limiting or token issuance is unavailable', content: new OA\JsonContent(ref: '#/components/schemas/DeviceSnAuthError')),
+    ],
+)]
+#[OA\Post(
+    path: '/v1/auth/logout',
+    operationId: 'v1AuthLogout',
+    summary: 'Revoke a y1 refresh credential',
+    description: 'Deletes only the supplied refresh credential. SN and UUID binding remain intact; existing access tokens retain their normal expiry. Repeated logout succeeds. No Bearer token is required. Responses use Cache-Control: no-store and Pragma: no-cache.',
+    security: [],
+    tags: ['Authentication'],
+    requestBody: new OA\RequestBody(
+        required: true,
+        content: new OA\JsonContent(
+            required: ['refreshToken'],
+            properties: [new OA\Property(property: 'refreshToken', description: 'Non-blank y1 refresh credential to revoke.', type: 'string', maxLength: 256, minLength: 1, writeOnly: true)],
+            type: 'object',
+        ),
+    ),
+    responses: [
+        new OA\Response(
+            response: 200,
+            description: 'Refresh credential revoked or already absent',
+            content: new OA\JsonContent(
+                required: ['success', 'message'],
+                properties: [
+                    new OA\Property(property: 'success', type: 'boolean', example: true),
+                    new OA\Property(property: 'message', type: 'string', example: 'logout'),
+                ],
+                type: 'object',
+            ),
+        ),
+        new OA\Response(response: 400, description: 'refreshToken is missing, blank, not a string or longer than 256 bytes', content: new OA\JsonContent(ref: '#/components/schemas/DeviceSnAuthError')),
+        new OA\Response(response: 503, description: 'Refresh-token storage is unavailable', content: new OA\JsonContent(ref: '#/components/schemas/DeviceSnAuthError')),
+    ],
+)]
 #[OA\Post(
     path: '/v1/auth/login',
     operationId: 'v1AuthLogin',
@@ -62,13 +203,15 @@ use Psr\Http\Message\StreamFactoryInterface;
     path: '/v1/auth/refresh',
     operationId: 'v1AuthRefresh',
     summary: 'Refresh an access token',
+    description: 'Compatibility endpoint for y1 refresh tokens and existing login codes. Device SN refresh credentials preserve auth_method and device_sn_id and revalidate current authorization; they never fall back to login-code exchange. Responses use Cache-Control: no-store.',
+    security: [],
     tags: ['Authentication'],
     requestBody: new OA\RequestBody(
         required: true,
         content: new OA\JsonContent(
             required: ['refreshToken'],
             properties: [
-                new OA\Property(property: 'refreshToken', type: 'string'),
+                new OA\Property(property: 'refreshToken', type: 'string', maxLength: 2048, minLength: 1),
             ],
             type: 'object',
         ),
@@ -76,6 +219,8 @@ use Psr\Http\Message\StreamFactoryInterface;
     responses: [
         new OA\Response(response: 200, description: 'Token refreshed'),
         new OA\Response(response: 400, description: 'Invalid request'),
+        new OA\Response(response: 401, description: 'Refresh credential, account or device SN authorization is invalid'),
+        new OA\Response(response: 503, description: 'Refresh-token storage or device SN authorization storage is unavailable'),
     ],
 )]
 #[OA\Post(
@@ -137,7 +282,8 @@ use Psr\Http\Message\StreamFactoryInterface;
     path: '/v2/auth/refresh-token',
     operationId: 'v2AuthRefreshToken',
     summary: 'Rotate a genuine refresh token',
-    description: 'Accepts only a refresh token issued by this service. Login codes and QR transport wrappers are never resolved by this endpoint.',
+    description: 'Accepts only a refresh token issued by this service. Login codes and QR transport wrappers are never resolved by this endpoint. Device SN sessions preserve auth_method and device_sn_id and revalidate current authorization. Responses use Cache-Control: no-store.',
+    security: [],
     tags: ['Authentication'],
     requestBody: new OA\RequestBody(
         required: true,
@@ -148,6 +294,8 @@ use Psr\Http\Message\StreamFactoryInterface;
                     property: 'refreshToken',
                     description: 'Refresh token returned by a previous successful authentication or refresh.',
                     type: 'string',
+                    maxLength: 256,
+                    minLength: 1,
                 ),
             ],
             type: 'object',
@@ -189,7 +337,8 @@ use Psr\Http\Message\StreamFactoryInterface;
             ),
         ),
         new OA\Response(response: 400, description: 'refreshToken is missing or is not a non-empty string'),
-        new OA\Response(response: 401, description: 'Refresh token is invalid, expired, or already consumed'),
+        new OA\Response(response: 401, description: 'Refresh token is invalid, expired, already consumed, or its device SN authorization is no longer valid'),
+        new OA\Response(response: 503, description: 'Refresh-token storage or device SN authorization storage is unavailable'),
     ],
 )]
 #[OA\Post(
