@@ -128,6 +128,7 @@ final class SnapshotQueryServiceTest extends TestCase
         // searchPublic needs to return an ActiveQuery for paginate to work
         $query = $this->createMock(ActiveQuery::class);
         $query->method('count')->willReturn('0');
+        $query->method('select')->willReturnSelf();
         $query->method('offset')->willReturnSelf();
         $query->method('limit')->willReturnSelf();
         $query->method('all')->willReturn([]);
@@ -145,6 +146,7 @@ final class SnapshotQueryServiceTest extends TestCase
     {
         $query = $this->createMock(ActiveQuery::class);
         $query->method('count')->willReturn('0');
+        $query->method('select')->willReturnSelf();
         $query->method('offset')->willReturnSelf();
         $query->method('limit')->willReturnSelf();
         $query->method('all')->willReturn([]);
@@ -174,6 +176,7 @@ final class SnapshotQueryServiceTest extends TestCase
         $params = ['page' => 1, 'pageSize' => 10];
         $query = $this->createMock(ActiveQuery::class);
         $query->method('count')->willReturn('3');
+        $query->method('select')->willReturnSelf();
         $query->method('offset')->willReturnSelf();
         $query->method('limit')->willReturnSelf();
         $query->method('all')->willReturn([]);
@@ -225,6 +228,7 @@ final class SnapshotQueryServiceTest extends TestCase
         $params = ['page' => 1, 'pageSize' => 10];
         $query = $this->createMock(ActiveQuery::class);
         $query->method('count')->willReturn('2');
+        $query->method('select')->willReturnSelf();
         $query->method('offset')->willReturnSelf();
         $query->method('limit')->willReturnSelf();
         $query->method('all')->willReturn([]);
@@ -275,6 +279,7 @@ final class SnapshotQueryServiceTest extends TestCase
         $params = ['page' => 3, 'pageSize' => 5];
         $query = $this->createMock(ActiveQuery::class);
         $query->method('count')->willReturn('12');
+        $query->method('select')->willReturnSelf();
         $query->method('offset')->willReturnSelf();
         $query->method('limit')->willReturnSelf();
         $query->method('all')->willReturn([]);
