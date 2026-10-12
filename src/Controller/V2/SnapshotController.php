@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controller\V2;
 
 use App\Model\Snapshot;
+use App\Search\SnapshotSearch;
 use App\Service\PaginatedResult;
 use App\Service\PaginationService;
 use App\Service\SnapshotQueryService;
@@ -109,6 +110,9 @@ final class SnapshotController
      */
     private function handlePublic(ServerRequestInterface $request, array $params, array $expandFields): ResponseInterface
     {
+        if (($error = $this->validatePublicFilter($request, $params)) !== null) {
+            return $error;
+        }
         $result = $this->snapshotQueryService->findPublic($params);
         return $this->createPaginatedSnapshotResponse($request, $result, $expandFields);
     }
@@ -118,6 +122,9 @@ final class SnapshotController
      */
     private function handleCheckin(ServerRequestInterface $request, array $params, array $expandFields): ResponseInterface
     {
+        if (($error = $this->validatePublicFilter($request, $params)) !== null) {
+            return $error;
+        }
         $result = $this->snapshotQueryService->findCheckin($params);
         return $this->createPaginatedSnapshotResponse($request, $result, $expandFields);
     }
@@ -132,6 +139,9 @@ final class SnapshotController
             return $this->createErrorResponse($request, 403, 'Login required.');
         }
 
+        if (($error = $this->validatePublicFilter($request, $params)) !== null) {
+            return $error;
+        }
         $result = $this->snapshotQueryService->findGroup((int) $user['user_id'], $params);
         return $this->createPaginatedSnapshotResponse($request, $result, $expandFields);
     }
@@ -146,6 +156,9 @@ final class SnapshotController
             return $this->createErrorResponse($request, 403, 'Login required.');
         }
 
+        if (($error = $this->validatePublicFilter($request, $params)) !== null) {
+            return $error;
+        }
         $result = $this->snapshotQueryService->findPrivate((int) $user['user_id'], $params);
         return $this->createPaginatedSnapshotResponse($request, $result, $expandFields);
     }
@@ -207,5 +220,15 @@ final class SnapshotController
     private function createErrorResponse(ServerRequestInterface $request, int $statusCode, string $message): ResponseInterface
     {
         return $this->restResponseFactory->createError($request, $statusCode, $message);
+    }
+
+    private function validatePublicFilter(ServerRequestInterface $request, array $params): ?ResponseInterface
+    {
+        try {
+            SnapshotSearch::normalizePublicFilter($params);
+            return null;
+        } catch (\RuntimeException $exception) {
+            return $this->createErrorResponse($request, 400, $exception->getMessage());
+        }
     }
 }

@@ -228,14 +228,9 @@ final class SnapshotSearchTest extends TestCase
     public function testApplyTagFilterWithStringIds(): void
     {
         $query = $this->search->searchPublic();
-        $joinCountBefore = count($query->getJoins());
-
         $this->search->applyTagFilter($query, '1,2,3');
 
-        $joins = $query->getJoins();
-        // Should have added verse_tags join
-        $joinTables = array_map(fn($j) => $j[1], $joins);
-        $this->assertContains('verse_tags', $joinTables);
+        $this->assertClassificationFilter($query);
     }
 
     public function testApplyTagFilterWithArrayIds(): void
@@ -244,9 +239,7 @@ final class SnapshotSearchTest extends TestCase
 
         $this->search->applyTagFilter($query, [1, 2, 3]);
 
-        $joins = $query->getJoins();
-        $joinTables = array_map(fn($j) => $j[1], $joins);
-        $this->assertContains('verse_tags', $joinTables);
+        $this->assertClassificationFilter($query);
     }
 
     public function testApplyTagFilterWithEmptyStringDoesNotAddJoin(): void
@@ -273,36 +266,38 @@ final class SnapshotSearchTest extends TestCase
     {
         $query = $this->search->searchPublic(['tags' => '1,2']);
 
-        $joins = $query->getJoins();
-        $joinTables = array_map(fn($j) => $j[1], $joins);
-        $this->assertContains('verse_tags', $joinTables);
+        $this->assertClassificationFilter($query);
     }
 
     public function testSearchCheckinWithTagsParam(): void
     {
         $query = $this->search->searchCheckin(['tags' => '5']);
 
-        $joins = $query->getJoins();
-        $joinTables = array_map(fn($j) => $j[1], $joins);
-        $this->assertContains('verse_tags', $joinTables);
+        $this->assertClassificationFilter($query);
     }
 
     public function testSearchPrivateWithTagsParam(): void
     {
         $query = $this->search->searchPrivate(1, ['tags' => '3,4']);
 
-        $joins = $query->getJoins();
-        $joinTables = array_map(fn($j) => $j[1], $joins);
-        $this->assertContains('verse_tags', $joinTables);
+        $this->assertClassificationFilter($query);
     }
 
     public function testSearchGroupWithTagsParam(): void
     {
         $query = $this->search->searchGroup(1, ['tags' => '7']);
 
-        $joins = $query->getJoins();
-        $joinTables = array_map(fn($j) => $j[1], $joins);
-        $this->assertContains('verse_tags', $joinTables);
+        $this->assertClassificationFilter($query);
+    }
+
+    private function assertClassificationFilter(ActiveQuery $query): void
+    {
+        $where = $query->getWhere();
+        $this->assertSame('and', $where[0]);
+        $this->assertSame('exists', $where[2][0]);
+        $classification = $where[2][1];
+        $this->assertSame(['filter_vt' => 'verse_tags'], $classification->getFrom());
+        $this->assertStringContainsString('public', json_encode($classification->getWhere()));
     }
 
     public function testApplyTagFilterWithInvalidStringIds(): void
