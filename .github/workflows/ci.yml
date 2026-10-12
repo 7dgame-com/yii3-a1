@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: ["*", "codex/identity-online-dev-20261012"]
+    branches: ["*", "codex/identity-online-dev-20261012", "codex/identity-public-visibility-20261012"]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -58,7 +58,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: "8.3"
-          extensions: pdo, pdo_mysql, redis, zip
+          extensions: pdo, pdo_mysql, pdo_sqlite, redis, zip
           coverage: none
           tools: composer:v2
 
@@ -114,7 +114,10 @@ jobs:
     needs: test
     if: >-
       (github.event_name == 'workflow_dispatch' && inputs.publish_candidate == true) ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/codex/identity-online-dev-20261012')
+      (github.event_name == 'push' && (
+        github.ref == 'refs/heads/codex/identity-online-dev-20261012' ||
+        github.ref == 'refs/heads/codex/identity-public-visibility-20261012'
+      ))
     permissions:
       contents: read
     steps:

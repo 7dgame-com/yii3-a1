@@ -472,7 +472,7 @@ final class SnapshotQueryServiceTest extends TestCase
         $this->cache->expects($this->once())
             ->method('getOrSet')
             ->willReturnCallback(function (string $key, callable $cb, int $ttl) {
-                $this->assertSame('tags_by_type_Classify', $key);
+                $this->assertSame('tags_by_type_v2_Classify', $key);
                 $this->assertSame(30, $ttl);
                 return [];
             });
@@ -498,8 +498,8 @@ final class SnapshotQueryServiceTest extends TestCase
         $this->service->findTags('Custom');
 
         $this->assertCount(2, $capturedKeys);
-        $this->assertSame('tags_by_type_Classify', $capturedKeys[0]);
-        $this->assertSame('tags_by_type_Custom', $capturedKeys[1]);
+        $this->assertSame('tags_by_type_v2_Classify', $capturedKeys[0]);
+        $this->assertSame('tags_by_type_v2_Custom', $capturedKeys[1]);
     }
 
     // ---------------------------------------------------------------
@@ -548,6 +548,38 @@ final class SnapshotQueryServiceTest extends TestCase
 
         $this->assertCount(2, $capturedKeys);
         $this->assertNotSame($capturedKeys[0], $capturedKeys[1]);
+    }
+
+    public function testPublicFilterHasSeparateNormalizedCacheKeys(): void
+    {
+        $keys = [];
+        $this->cache->method('getOrSet')
+            ->willReturnCallback(function (string $key) use (&$keys) {
+                $keys[] = $key;
+                return new PaginatedResult(items: [], totalCount: 0, pageCount: 0, currentPage: 1, perPage: 20);
+            });
+        foreach (['findPublic', 'findCheckin', 'findPrivate', 'findGroup'] as $method) {
+            foreach ([[], ['public' => '0'], ['public' => '1'], ['public' => false], ['public' => 'true']] as $params) {
+                if (in_array($method, ['findPrivate', 'findGroup'], true)) {
+                    $this->service->$method(10, $params);
+                } else {
+                    $this->service->$method($params);
+                }
+            }
+        }
+        foreach (array_chunk($keys, 5) as $scopeKeys) {
+            $this->assertCount(3, array_unique($scopeKeys));
+            $this->assertSame($scopeKeys[1], $scopeKeys[3]);
+            $this->assertSame($scopeKeys[2], $scopeKeys[4]);
+        }
+    }
+
+    public function testInvalidPublicFilterIsRejectedBeforeCacheLookup(): void
+    {
+        $this->cache->expects($this->never())->method('getOrSet');
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionCode(400);
+        $this->service->findPublic(['public' => ['1']]);
     }
 
     /**

@@ -6,6 +6,7 @@ namespace App\Search;
 
 use App\Model\Snapshot;
 use Yiisoft\ActiveRecord\ActiveQuery;
+use Yiisoft\Db\Query\Query;
 
 /**
  * SnapshotSearch — pure service class that builds ActiveQuery instances
@@ -128,7 +129,7 @@ class SnapshotSearch
     /**
      * Apply tag filter to an existing query.
      *
-     * Filters results by joining verse_tags and matching against the provided tag IDs.
+     * Matches any requested classification tag without multiplying snapshot rows.
      * Tag IDs can be provided as a comma-separated string or an array of integers.
      *
      * @param ActiveQuery $query The query to apply the filter to
@@ -150,8 +151,14 @@ class SnapshotSearch
             return $query;
         }
 
-        $query->innerJoin('verse_tags', '{{verse_tags}}.[[verse_id]] = {{snapshot}}.[[verse_id]]')
-            ->andWhere(['verse_tags.tags_id' => $tagIds]);
+        $classifications = (new Query($query->getModel()->db()))
+            ->select(['filter_vt.verse_id'])
+            ->from(['filter_vt' => 'verse_tags'])
+            ->innerJoin('tags AS filter_tags', '{{filter_tags}}.[[id]] = {{filter_vt}}.[[tags_id]]')
+            ->where('{{filter_vt}}.[[verse_id]] = {{snapshot}}.[[verse_id]]')
+            ->andWhere(['filter_vt.tags_id' => $tagIds])
+            ->andWhere(['or', ['<>', 'filter_tags.key', 'public'], ['filter_tags.key' => null]]);
+        $query->andWhere(['exists', $classifications]);
 
         return $query;
     }
@@ -166,7 +173,35 @@ class SnapshotSearch
         $query = (new ActiveQuery(Snapshot::class))
             ->alias('snapshot');
 
+        $public = self::normalizePublicFilter($params);
+        if ($public !== null) {
+            $publicProperty = (new Query($query->getModel()->db()))
+                ->from(['public_filter_vp' => 'verse_property'])
+                ->select(['public_filter_vp.verse_id'])
+                ->innerJoin('property AS public_filter_p', '{{public_filter_p}}.[[id]] = {{public_filter_vp}}.[[property_id]]')
+                ->where('{{public_filter_vp}}.[[verse_id]] = {{snapshot}}.[[verse_id]]')
+                ->andWhere(['public_filter_p.key' => 'public']);
+            $query->andWhere([$public === 1 ? 'exists' : 'not exists', $publicProperty]);
+        }
+
         return $this->applyBaseFilters($query, $params);
+    }
+
+    /**
+     * Validate before both querying and cache lookup. An omitted filter keeps
+     * the existing scope; public=0 must not be treated as an empty value.
+     */
+    public static function normalizePublicFilter(array $params): ?int
+    {
+        if (!array_key_exists('public', $params)) {
+            return null;
+        }
+
+        return match ($params['public']) {
+            0, '0', false, 'false' => 0,
+            1, '1', true, 'true' => 1,
+            default => throw new \RuntimeException('public must be 0 or 1.', 400),
+        };
     }
 
     /**
