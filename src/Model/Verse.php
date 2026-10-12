@@ -67,6 +67,7 @@ class Verse extends ActiveRecord
     {
         return $this->hasMany(Tags::class, ['id' => 'tags_id'])
             ->viaTable('verse_tags', ['verse_id' => 'id'])
+            ->select(['tags.id', 'tags.name', 'tags.key'])
             ->andWhere(['or', ['<>', 'tags.key', 'public'], ['tags.key' => null]]);
     }
 

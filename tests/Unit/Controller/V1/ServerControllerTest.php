@@ -418,14 +418,18 @@ final class ServerControllerTest extends TestCase
      */
     public function testTagsReturnsTagList(): void
     {
-        $tagsData = [['id' => 1, 'name' => 'Nature'], ['id' => 2, 'name' => 'City']];
+        $tagsData = [
+            ['id' => 1, 'name' => 'Nature'],
+            ['id' => 2, 'name' => 'City'],
+            ['id' => 3, 'name' => 'Learning'],
+            ['id' => 4, 'name' => 'Activity'],
+        ];
 
         $query = $this->createMock(ActiveQuery::class);
         $query->method('all')->willReturn($tagsData);
 
         $this->tagsSearch->expects($this->once())
-            ->method('findByType')
-            ->with('Classify')
+            ->method('findAll')
             ->willReturn($query);
 
         $this->setupCachePassthrough();
@@ -439,22 +443,24 @@ final class ServerControllerTest extends TestCase
 
         $this->assertNotNull($capturedBody);
         $decoded = json_decode($capturedBody, true);
-        $this->assertCount(2, $decoded);
-        $this->assertSame('Nature', $decoded[0]['name']);
+        $this->assertSame($tagsData, $decoded);
     }
 
     /**
-     * Test that tags() passes custom type parameter.
+     * Test that tags() ignores the legacy custom type parameter.
      * Validates: Requirement 4.6
      */
-    public function testTagsPassesCustomType(): void
+    public function testTagsIgnoresLegacyType(): void
     {
+        $tagsData = [
+            ['id' => 1, 'name' => 'Nature'],
+            ['id' => 2, 'name' => 'City'],
+        ];
         $query = $this->createMock(ActiveQuery::class);
-        $query->method('all')->willReturn([]);
+        $query->method('all')->willReturn($tagsData);
 
         $this->tagsSearch->expects($this->once())
-            ->method('findByType')
-            ->with('Custom')
+            ->method('findAll')
             ->willReturn($query);
 
         $this->setupCachePassthrough();
@@ -465,6 +471,8 @@ final class ServerControllerTest extends TestCase
         $request = $this->createRequestWithQueryParams(['type' => 'Custom']);
 
         $this->controller->tags($request);
+
+        $this->assertSame($tagsData, json_decode($capturedBody, true));
     }
 
     // ========================================================================
