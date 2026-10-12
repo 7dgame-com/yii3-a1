@@ -396,7 +396,15 @@ final class SwaggerControllerTest extends TestCase
         $paths = array_keys($decoded['paths'] ?? []);
 
         $this->assertContains('/v1/auth/login', $paths);
+        $this->assertContains('/v1/auth/sn-activate', $paths);
+        $this->assertContains('/v1/auth/sn-login', $paths);
+        $this->assertContains('/v1/auth/logout', $paths);
         $this->assertContains('/v1/auth/refresh', $paths);
+        $this->assertContains('/v2/auth/login', $paths);
+        $this->assertContains('/v2/auth/refresh-token', $paths);
+        $this->assertContains('/v2/auth/login-code', $paths);
+        $this->assertNotContains('/v1/auth/refresh-token', $paths);
+        $this->assertNotContains('/v1/auth/login-code', $paths);
         $this->assertContains('/v1/auth/key-to-token', $paths);
         $this->assertContains('/v1/auth/key-to-token-with-url', $paths);
         $this->assertContains('/v1/auth/login-code-context', $paths);
@@ -414,6 +422,183 @@ final class SwaggerControllerTest extends TestCase
         $this->assertContains('/health', $paths);
         $this->assertContains('/swagger', $paths);
         $this->assertContains('/swagger/json-schema', $paths);
+    }
+
+    public function testJsonSchemaDefinesDeviceSnAndLogoutContracts(): void
+    {
+        $controller = new SwaggerController($this->responseFactory, $this->streamFactory, 'admin', 'secret');
+        $capturedBody = null;
+        $capturedStatusCode = null;
+        $capturedHeaders = [];
+        $this->setupResponseCaptureWithBody($capturedBody, $capturedStatusCode, $capturedHeaders);
+        $controller->jsonSchema($this->createRequestWithAuth('Basic ' . base64_encode('admin:secret')));
+        $schema = json_decode((string) $capturedBody, true, 512, JSON_THROW_ON_ERROR);
+        $components = $schema['components']['schemas'];
+
+        $credentials = $components['DeviceSnCredentials'];
+        self::assertSame(['sn', 'uuid'], $credentials['required']);
+        self::assertSame(['sn', 'uuid'], array_keys($credentials['properties']));
+        self::assertSame('string', $credentials['properties']['sn']['type']);
+        self::assertSame(128, $credentials['properties']['sn']['maxLength']);
+        self::assertTrue($credentials['properties']['sn']['writeOnly']);
+        self::assertStringContainsString('Exactly 16', $credentials['properties']['sn']['description']);
+        self::assertStringContainsString('32-character codes are rejected', $credentials['properties']['sn']['description']);
+        self::assertSame(255, $credentials['properties']['uuid']['maxLength']);
+
+        foreach (['sn-activate' => 'v1AuthSnActivate', 'sn-login' => 'v1AuthSnLogin'] as $action => $operationId) {
+            $operation = $schema['paths']['/v1/auth/' . $action]['post'];
+            self::assertSame($operationId, $operation['operationId']);
+            self::assertSame([], $operation['security']);
+            self::assertTrue($operation['requestBody']['required']);
+            self::assertSame('#/components/schemas/DeviceSnCredentials',
+                $operation['requestBody']['content']['application/json']['schema']['$ref']);
+            self::assertSame([200, 400, 401, 409, 429, 503], array_keys($operation['responses']));
+            self::assertSame('#/components/schemas/DeviceSnAuthResult',
+                $operation['responses']['200']['content']['application/json']['schema']['$ref']);
+            self::assertSame(60, $operation['responses']['429']['headers']['Retry-After']['schema']['example']);
+            self::assertStringContainsString('no-store', $operation['description']);
+            foreach ([400, 401, 409, 429, 503] as $status) {
+                self::assertSame('#/components/schemas/DeviceSnAuthError',
+                    $operation['responses'][$status]['content']['application/json']['schema']['$ref']);
+            }
+        }
+        $success = $components['DeviceSnAuthResult'];
+        self::assertSame(['success', 'message', 'nickname', 'token', 'user'], $success['required']);
+        self::assertSame('login', $success['properties']['message']['example']);
+        self::assertSame(['accessToken', 'expires', 'refreshToken'], $success['properties']['token']['required']);
+        self::assertStringContainsString('HS256', $success['properties']['token']['properties']['accessToken']['description']);
+        self::assertStringContainsString('Asia/Shanghai', $success['properties']['token']['properties']['expires']['description']);
+        self::assertSame(['id', 'username', 'nickname', 'fixture'], $success['properties']['user']['required']);
+        self::assertFalse($success['properties']['user']['properties']['fixture']['example']);
+        self::assertSame(['name', 'message', 'code', 'status', 'type'], $components['DeviceSnAuthError']['required']);
+
+        $logout = $schema['paths']['/v1/auth/logout']['post'];
+        self::assertSame([], $logout['security']);
+        self::assertSame(['refreshToken'], $logout['requestBody']['content']['application/json']['schema']['required']);
+        self::assertSame(256, $logout['requestBody']['content']['application/json']['schema']['properties']['refreshToken']['maxLength']);
+        self::assertSame([200, 400, 503], array_keys($logout['responses']));
+        $logoutSuccess = $logout['responses']['200']['content']['application/json']['schema'];
+        self::assertSame(['success', 'message'], $logoutSuccess['required']);
+        self::assertSame('logout', $logoutSuccess['properties']['message']['example']);
+        self::assertStringContainsString('binding remain intact', $logout['description']);
+
+        foreach (['/v1/auth/refresh' => 2048, '/v2/auth/refresh-token' => 256] as $path => $maxLength) {
+            $refresh = $schema['paths'][$path]['post'];
+            self::assertArrayHasKey(401, $refresh['responses']);
+            self::assertArrayHasKey(503, $refresh['responses']);
+            self::assertStringContainsString('auth_method', $refresh['description']);
+            self::assertStringContainsString('device_sn_id', $refresh['description']);
+            self::assertSame($maxLength, $refresh['requestBody']['content']['application/json']['schema']['properties']['refreshToken']['maxLength']);
+        }
+    }
+
+    public function testJsonSchemaDefinesStrictCredentialEndpointContracts(): void
+    {
+        $controller = new SwaggerController(
+            $this->responseFactory,
+            $this->streamFactory,
+            'admin',
+            'secret',
+        );
+
+        $capturedBody = null;
+        $capturedStatusCode = null;
+        $capturedHeaders = [];
+        $this->setupResponseCaptureWithBody($capturedBody, $capturedStatusCode, $capturedHeaders);
+
+        $controller->jsonSchema(
+            $this->createRequestWithAuth('Basic ' . base64_encode('admin:secret')),
+        );
+
+        $decoded = json_decode((string) $capturedBody, true, 512, JSON_THROW_ON_ERROR);
+        $login = $decoded['paths']['/v2/auth/login']['post'] ?? [];
+        $refresh = $decoded['paths']['/v2/auth/refresh-token']['post'] ?? [];
+        $loginCode = $decoded['paths']['/v2/auth/login-code']['post'] ?? [];
+        $coreSuccessFields = ['success', 'message', 'nickname', 'token', 'user'];
+        $loginCodeSuccessFields = [...$coreSuccessFields, 'url'];
+
+        $this->assertSame('v2AuthLogin', $login['operationId'] ?? null);
+        $this->assertSame(
+            ['username', 'password'],
+            $login['requestBody']['content']['application/json']['schema']['required'] ?? null,
+        );
+        $this->assertSame(
+            ['username', 'password'],
+            array_keys($login['requestBody']['content']['application/json']['schema']['properties'] ?? []),
+        );
+        $this->assertArrayHasKey('200', $login['responses'] ?? []);
+        $this->assertArrayHasKey('400', $login['responses'] ?? []);
+        $this->assertArrayHasKey('401', $login['responses'] ?? []);
+        $this->assertSame(
+            $coreSuccessFields,
+            $login['responses']['200']['content']['application/json']['schema']['required'] ?? null,
+        );
+
+        $this->assertSame('v2AuthRefreshToken', $refresh['operationId'] ?? null);
+        $this->assertSame(
+            ['refreshToken'],
+            $refresh['requestBody']['content']['application/json']['schema']['required'] ?? null,
+        );
+        $this->assertSame(
+            ['refreshToken'],
+            array_keys($refresh['requestBody']['content']['application/json']['schema']['properties'] ?? []),
+        );
+        $this->assertArrayHasKey('200', $refresh['responses'] ?? []);
+        $this->assertArrayHasKey('400', $refresh['responses'] ?? []);
+        $this->assertArrayHasKey('401', $refresh['responses'] ?? []);
+        $this->assertArrayHasKey('503', $refresh['responses'] ?? []);
+        $this->assertSame(
+            $coreSuccessFields,
+            $refresh['responses']['200']['content']['application/json']['schema']['required'] ?? null,
+        );
+
+        $this->assertSame('v2AuthLoginCode', $loginCode['operationId'] ?? null);
+        $this->assertSame(
+            ['loginCode'],
+            $loginCode['requestBody']['content']['application/json']['schema']['required'] ?? null,
+        );
+        $this->assertSame(
+            ['loginCode'],
+            array_keys($loginCode['requestBody']['content']['application/json']['schema']['properties'] ?? []),
+        );
+        $this->assertArrayHasKey('200', $loginCode['responses'] ?? []);
+        $this->assertArrayHasKey('400', $loginCode['responses'] ?? []);
+        $this->assertArrayHasKey('401', $loginCode['responses'] ?? []);
+        $this->assertArrayHasKey('503', $loginCode['responses'] ?? []);
+        $this->assertSame(
+            $loginCodeSuccessFields,
+            $loginCode['responses']['200']['content']['application/json']['schema']['required'] ?? null,
+        );
+
+        $loginSchema = $login['responses']['200']['content']['application/json']['schema'] ?? [];
+        $refreshSchema = $refresh['responses']['200']['content']['application/json']['schema'] ?? [];
+        $loginCodeSchema = $loginCode['responses']['200']['content']['application/json']['schema'] ?? [];
+
+        $this->assertSame($coreSuccessFields, array_keys($loginSchema['properties'] ?? []));
+        $this->assertArrayNotHasKey('url', $loginSchema['properties'] ?? []);
+        $this->assertSame($coreSuccessFields, array_keys($refreshSchema['properties'] ?? []));
+        $this->assertArrayNotHasKey('url', $refreshSchema['properties'] ?? []);
+        $this->assertSame($loginCodeSuccessFields, array_keys($loginCodeSchema['properties'] ?? []));
+
+        foreach ([$loginSchema, $refreshSchema, $loginCodeSchema] as $schema) {
+            $this->assertSame(
+                ['accessToken', 'expires', 'refreshToken'],
+                $schema['properties']['token']['required'] ?? null,
+            );
+            $this->assertSame(
+                ['id', 'username', 'nickname', 'fixture'],
+                $schema['properties']['user']['required'] ?? null,
+            );
+            $this->assertSame(
+                ['id', 'username', 'nickname', 'fixture'],
+                array_keys($schema['properties']['user']['properties'] ?? []),
+            );
+            $this->assertSame('keyToTokenWithUrl', $schema['properties']['message']['example'] ?? null);
+        }
+
+        $this->assertSame('string', $loginCodeSchema['properties']['url']['type'] ?? null);
+        $this->assertSame('uri', $loginCodeSchema['properties']['url']['format'] ?? null);
+        $this->assertTrue($loginCodeSchema['properties']['url']['nullable'] ?? false);
     }
 
     /**

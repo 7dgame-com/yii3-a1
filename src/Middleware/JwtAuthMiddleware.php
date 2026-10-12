@@ -42,7 +42,11 @@ final class JwtAuthMiddleware implements MiddlewareInterface
             return $this->createUnauthorizedResponse();
         }
 
-        $userData = $this->jwtService->parseToken($token);
+        try {
+            $userData = $this->jwtService->parseToken($token);
+        } catch (\RuntimeException) {
+            return $this->createUnavailableResponse();
+        }
 
         if ($userData === null) {
             return $this->createUnauthorizedResponse();
@@ -102,5 +106,16 @@ final class JwtAuthMiddleware implements MiddlewareInterface
         return $this->responseFactory->createResponse(401)
             ->withHeader('Content-Type', 'application/json')
             ->withBody($stream);
+    }
+
+    private function createUnavailableResponse(): ResponseInterface
+    {
+        return $this->responseFactory->createResponse(503)
+            ->withHeader('Content-Type', 'application/json')
+            ->withHeader('Cache-Control', 'no-store')
+            ->withBody($this->streamFactory->createStream(json_encode([
+                'name' => 'Service Unavailable', 'message' => 'Identity authority is unavailable.',
+                'code' => 0, 'status' => 503, 'type' => 'yii\\web\\ServiceUnavailableHttpException',
+            ], JSON_THROW_ON_ERROR)));
     }
 }

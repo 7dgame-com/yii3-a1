@@ -35,6 +35,7 @@ final class LoginCodeStore
         private readonly LoginCodeSettings $settings,
         private readonly ?LoginCodeReadiness $readiness = null,
         private readonly ?LoginCodeTelemetry $telemetry = null,
+        private readonly ?IdentityAuthorityClient $identityAuthority = null,
     ) {
         $this->redis = $redis instanceof RedisClient
             ? new PredisLoginCodeRedisClient($redis)
@@ -51,6 +52,12 @@ final class LoginCodeStore
     public function resolve(string $rawLoginCode): LoginCodeLookupResult
     {
         return $this->resolveForSource($rawLoginCode, LoginCodeTelemetry::SOURCE_YII3_REFRESH);
+    }
+
+    /** Resolve a login code used by the strict login-code endpoint. */
+    public function resolveForLoginCode(string $rawLoginCode): LoginCodeLookupResult
+    {
+        return $this->resolveForSource($rawLoginCode, LoginCodeTelemetry::SOURCE_YII3_LOGIN_CODE);
     }
 
     /**
@@ -72,6 +79,7 @@ final class LoginCodeStore
 
     private function resolveForSource(string $rawLoginCode, string $telemetrySource): LoginCodeLookupResult
     {
+        if ($this->identityAuthority?->enabled()) throw new \RuntimeException('Local login-code authority is retired.', 503);
         $rawLoginCode = trim($rawLoginCode);
         if (strlen($rawLoginCode) < self::MINIMUM_LOGIN_CODE_LENGTH) {
             return LoginCodeLookupResult::miss();

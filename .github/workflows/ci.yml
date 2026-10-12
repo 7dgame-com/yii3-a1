@@ -2,10 +2,16 @@ name: CI
 
 on:
   push:
-    branches: ["*"]
+    branches: ["*", "codex/identity-online-dev-20261012"]
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      publish_candidate:
+        description: 'Publish only a SHA-pinned y1 candidate; no mutable tags or deployment'
+        type: boolean
+        required: false
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -102,6 +108,70 @@ jobs:
           TEST_MYSQL_PASSWORD: root
         run: php tests/manual/private_snapshot_large_payload_probe.php
 
+  candidate:
+    name: Publish fixed development candidate
+    runs-on: ubuntu-latest
+    needs: test
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.publish_candidate == true) ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/codex/identity-online-dev-20261012')
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - name: Login to Tencent Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.TENCENT_REGISTRY }}
+          username: ${{ secrets.TENCENT_REGISTRY_USER }}
+          password: ${{ secrets.TENCENT_REGISTRY_PASSWORD }}
+      - name: Record fixed source revision
+        env:
+          CANDIDATE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${CANDIDATE_SHA}"
+          printf '%s\n' "${CANDIDATE_SHA}" > GIT_COMMIT
+          TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S' > BUILD_TIME
+      - name: Build and publish candidate only
+        id: image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            YII_ENV=dev
+            UNITY_DEV_LOGIN_FIXTURE_ENABLED=false
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+          tags: ${{ env.TENCENT_REGISTRY }}/${{ env.TENCENT_IMAGE_NAME }}:candidate-${{ github.sha }}
+      - name: Save candidate provenance
+        env:
+          CANDIDATE_SHA: ${{ github.sha }}
+          CANDIDATE_DIGEST: ${{ steps.image.outputs.digest }}
+          CANDIDATE_RUN: ${{ github.run_id }}
+          CANDIDATE_IMAGE: ${{ env.TENCENT_REGISTRY }}/${{ env.TENCENT_IMAGE_NAME }}
+        run: |
+          set -euo pipefail
+          [[ "${CANDIDATE_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]
+          python3 - <<'PY'
+          import json, os
+          e = os.environ
+          result = {"status": "published-candidate-not-live", "revision": e["CANDIDATE_SHA"],
+                    "runId": e["CANDIDATE_RUN"], "platform": "linux/amd64",
+                    "image": e["CANDIDATE_IMAGE"] + ":candidate-" + e["CANDIDATE_SHA"],
+                    "digest": e["CANDIDATE_DIGEST"], "productionUntouched": True}
+          with open("candidate-image.json", "w") as f:
+              json.dump(result, f, indent=2)
+              f.write("\n")
+          PY
+          printf 'y1 candidate: `%s@%s`\nNo mutable tags or deployment were performed.\n' "${CANDIDATE_IMAGE}" "${CANDIDATE_DIGEST}" >> "${GITHUB_STEP_SUMMARY}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yii3-a1-candidate-image-provenance-${{ github.sha }}
+          path: candidate-image.json
+
   build:
     name: Build Docker image
     runs-on: ubuntu-latest
@@ -134,7 +204,17 @@ jobs:
           BRANCH_NAME=$(echo "${{ github.ref }}" | sed 's|refs/heads/||' | sed 's|/|-|g')
           IMAGE="${TENCENT_REGISTRY}/${TENCENT_IMAGE_NAME}:${BRANCH_NAME}"
 
-          docker build -t "${IMAGE}" .
+          IMAGE_YII_ENV=production
+          UNITY_DEV_LOGIN_FIXTURE_ENABLED=false
+          if [ "${BRANCH_NAME}" = "develop" ]; then
+            IMAGE_YII_ENV=dev
+            UNITY_DEV_LOGIN_FIXTURE_ENABLED=true
+          fi
+
+          docker build \
+            --build-arg YII_ENV="${IMAGE_YII_ENV}" \
+            --build-arg UNITY_DEV_LOGIN_FIXTURE_ENABLED="${UNITY_DEV_LOGIN_FIXTURE_ENABLED}" \
+            -t "${IMAGE}" .
           docker push "${IMAGE}"
 
           if [ "${BRANCH_NAME}" = "publish" ]; then

@@ -13,6 +13,8 @@ return [
         'class' => JwtService::class,
         '__construct()' => [
             'keyFilePath' => $params['jwt']['keyFile'],
+            'deviceSnService' => \Yiisoft\Definitions\Reference::to(\App\Service\DeviceSnService::class),
+            'identityAuthority' => \Yiisoft\Definitions\Reference::to(\App\Service\IdentityAuthorityClient::class),
         ],
     ],
 ];

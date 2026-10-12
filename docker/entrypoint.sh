@@ -3,7 +3,7 @@ set -eu
 
 mkdir -p runtime/logs
 
-if [ -n "${JWT_KEY:-}" ] && [ ! -f "$JWT_KEY" ]; then
+if [ "${IDENTITY_DATA_SOURCE:-legacy}" != "identity" ] && [ -n "${JWT_KEY:-}" ] && [ ! -f "$JWT_KEY" ]; then
     is_cloud_production=false
     if [ "${DEPLOYMENT_MODE:-}" = "cloud" ]; then
         is_cloud_production=true

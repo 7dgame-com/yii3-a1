@@ -7,6 +7,7 @@ use App\Controller\SwaggerController;
 use App\Controller\V1\AuthController;
 use App\Controller\V1\PhototypeController;
 use App\Controller\V1\ServerController;
+use App\Controller\V2\AuthController as V2AuthController;
 use App\Controller\V2\SnapshotController;
 use App\Controller\V2\SystemController;
 use App\Controller\V2\TagController;
@@ -29,6 +30,18 @@ return [
     Route::post('/v1/auth/login')
         ->action([AuthController::class, 'login'])
         ->name('v1.auth.login'),
+
+    Route::post('/v1/auth/sn-activate')
+        ->action([AuthController::class, 'snActivate'])
+        ->name('v1.auth.sn-activate'),
+
+    Route::post('/v1/auth/sn-login')
+        ->action([AuthController::class, 'snLogin'])
+        ->name('v1.auth.sn-login'),
+
+    Route::post('/v1/auth/logout')
+        ->action([AuthController::class, 'logout'])
+        ->name('v1.auth.logout'),
 
     Route::post('/v1/auth/refresh')
         ->action([AuthController::class, 'refresh'])
@@ -86,6 +99,18 @@ return [
     // =========================================================================
     // V2 Routes
     // =========================================================================
+    Route::post('/v2/auth/login')
+        ->action([V2AuthController::class, 'login'])
+        ->name('v2.auth.login'),
+
+    Route::post('/v2/auth/refresh-token')
+        ->action([V2AuthController::class, 'refreshToken'])
+        ->name('v2.auth.refresh-token'),
+
+    Route::post('/v2/auth/login-code')
+        ->action([V2AuthController::class, 'loginCode'])
+        ->name('v2.auth.login-code'),
+
     Route::get('/v2/snapshots')
         ->middleware(SnapshotScopeAuthMiddleware::class)
         ->action([SnapshotController::class, 'index'])

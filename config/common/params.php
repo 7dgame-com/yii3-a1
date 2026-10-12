@@ -52,6 +52,13 @@ if ($redisDatabase < 0) {
     throw new \InvalidArgumentException('REDIS_DB must be a non-negative integer.');
 }
 
+$applicationEnvironment = strtolower(trim((string) ($_ENV['YII_ENV'] ?? 'production')));
+$identityEnvironment = static function (string $name, string $default = ''): string {
+    $value = $_ENV[$name] ?? getenv($name);
+    return is_string($value) && trim($value) !== '' ? trim($value) : $default;
+};
+$identityGeneralToken = $identityEnvironment('IDENTITY_INTERNAL_API_TOKEN');
+
 /**
  * Common parameters shared between web and console applications.
  */
@@ -61,6 +68,19 @@ return [
         'version' => '3.0.0',
         'timezone' => 'Asia/Shanghai',
         'charset' => 'UTF-8',
+    ],
+
+    // Legacy remains the default. The switch requires the same explicit
+    // readiness decision as PHP API; no failed request falls back to local auth.
+    'identity' => [
+        'dataSource' => strtolower($identityEnvironment('IDENTITY_DATA_SOURCE', 'legacy')),
+        'ready' => in_array(strtolower($identityEnvironment('IDENTITY_INDEPENDENT_READY', 'false')), ['true', '1'], true),
+        'baseUrl' => $identityEnvironment('IDENTITY_AUTH_BASE_URL'),
+        'internalToken' => $identityEnvironment('IDENTITY_TOKEN_ISSUANCE_INTERNAL_API_TOKEN',
+            $identityEnvironment('IDENTITY_ACCOUNT_INTERNAL_TOKEN', $identityGeneralToken)),
+        'iamToken' => $identityEnvironment('IDENTITY_IAM_INTERNAL_API_TOKEN', $identityGeneralToken),
+        'timeoutMs' => $integerEnvironment('IDENTITY_AUTH_TIMEOUT_MS', 1500),
+        'legacyFixtureEnabled' => $booleanEnvironment('UNITY_DEV_LOGIN_FIXTURE_ENABLED', false),
     ],
 
     // Aliases for Yii3 path resolution
@@ -103,6 +123,20 @@ return [
         'issueLimit' => $integerEnvironment('LOGIN_CODE_ISSUE_LIMIT', 5),
         'issueWindowSeconds' => $integerEnvironment('LOGIN_CODE_ISSUE_WINDOW_SECONDS', 60),
         'legacyDbAvailable' => $booleanEnvironment('LOGIN_CODE_LEGACY_DB_AVAILABLE', true),
+    ],
+
+    // Fixed, fake Unity credential. It is disabled unless the develop image
+    // explicitly opts in and never touches real user data.
+    'unityDevLoginFixture' => [
+        'enabled' => $booleanEnvironment(
+            'UNITY_DEV_LOGIN_FIXTURE_ENABLED',
+            false,
+        ),
+        'environment' => $applicationEnvironment,
+        'keySha256' => $_ENV['UNITY_DEV_LOGIN_KEY_SHA256']
+            ?? \App\Service\UnityDevLoginFixture::DEFAULT_KEY_SHA256,
+        'frontendDomain' => $_ENV['UNITY_DEV_LOGIN_FRONTEND_DOMAIN']
+            ?? \App\Service\UnityDevLoginFixture::DEFAULT_FRONTEND_DOMAIN,
     ],
 
     // JWT configuration

@@ -26,7 +26,7 @@ use Psr\Clock\ClockInterface;
  */
 final class JwtService
 {
-    private Configuration $config;
+    private ?Configuration $config = null;
 
     /**
      * Token time-to-live in seconds (3 hours).
@@ -39,8 +39,14 @@ final class JwtService
      * @param string $keyFilePath Path to the file containing the JWT signing key.
      * @param ClockInterface|null $clock Optional clock for testing. Defaults to system clock.
      */
-    public function __construct(string $keyFilePath, ?ClockInterface $clock = null)
+    public function __construct(
+        string $keyFilePath,
+        ?ClockInterface $clock = null,
+        private readonly ?DeviceSnService $deviceSnService = null,
+        private readonly ?IdentityAuthorityClient $identityAuthority = null,
+    )
     {
+        if ($this->identityAuthority?->enabled()) return;
         $keyContent = trim(file_get_contents($keyFilePath));
 
         $this->config = Configuration::forSymmetricSigner(
@@ -60,22 +66,27 @@ final class JwtService
      * Generate a JWT access token for the given user ID.
      *
      * The token includes:
-     * - user_id claim
+     * - uid claim (same identity as username/password login)
+     * - Authentication provenance for device SN sessions only
      * - Issued at (iat) timestamp
      * - Expiration (exp) timestamp (current time + 3 hours)
      *
      * @param int $userId The user ID to encode in the token.
      * @return string The encoded JWT token string.
      */
-    public function generateToken(int $userId): string
+    public function generateToken(int $userId, array $authContext = []): string
     {
+        if ($this->identityAuthority?->enabled()) throw new \RuntimeException('Local token issuance is retired.', 503);
         $now = $this->clock->now();
 
-        $token = $this->config->builder()
+        $builder = $this->config->builder()
             ->issuedAt($now)
             ->expiresAt($now->modify("+{$this->ttl} seconds"))
-            ->withClaim('uid', $userId)
-            ->getToken($this->config->signer(), $this->config->signingKey());
+            ->withClaim('uid', $userId);
+        foreach (DeviceSnContext::fromArray($authContext) as $name => $value) {
+            $builder = $builder->withClaim($name, $value);
+        }
+        $token = $builder->getToken($this->config->signer(), $this->config->signingKey());
 
         return $token->toString();
     }
@@ -84,10 +95,14 @@ final class JwtService
      * Parse a JWT token and extract the user identity.
      *
      * @param string $token The JWT token string to parse.
-     * @return array{user_id: int}|null The parsed claims or null if parsing/validation fails.
+     * @return array{user_id: int, auth_method?: string, device_sn_id?: int}|null
      */
     public function parseToken(string $token): ?array
     {
+        if ($this->identityAuthority?->enabled()) {
+            $subject = $this->identityAuthority->verifyAccessToken($token);
+            return $subject === null ? null : ['user_id' => $subject['id']] + DeviceSnContext::fromArray($subject);
+        }
         try {
             $parsedToken = $this->config->parser()->parse($token);
 
@@ -106,7 +121,17 @@ final class JwtService
                 return null;
             }
 
-            return ['user_id' => (int) $userId];
+            $context = DeviceSnContext::fromArray($parsedToken->claims()->all());
+            if ($context !== []) {
+                if ($this->deviceSnService === null || (int) $userId <= 0) {
+                    return null;
+                }
+                // Temporary SN disablement only stops future login/refresh.
+                // Deleted/disabled/promoted accounts and broken bindings fail now.
+                $this->deviceSnService->authorizeSession($context['device_sn_id'], (int) $userId, false);
+            }
+
+            return ['user_id' => (int) $userId] + $context;
         } catch (\Throwable) {
             return null;
         }
@@ -120,19 +145,7 @@ final class JwtService
      */
     public function validateToken(string $token): bool
     {
-        try {
-            $parsedToken = $this->config->parser()->parse($token);
-
-            if (!$parsedToken instanceof Plain) {
-                return false;
-            }
-
-            $constraints = $this->getValidationConstraints();
-
-            return $this->config->validator()->validate($parsedToken, ...$constraints);
-        } catch (\Throwable) {
-            return false;
-        }
+        return $this->parseToken($token) !== null;
     }
 
     /**

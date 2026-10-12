@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 use App\Search\SnapshotSearch;
 use App\Service\AuthService;
+use App\Service\IdentityAuthorityClient;
+use App\Service\DeviceSnService;
+use App\Service\DeviceSnRateLimiter;
 use App\Search\TagsSearch;
 use App\Service\HealthCheckService;
 use App\Service\JwtService;
@@ -17,6 +20,7 @@ use App\Service\PhototypeQueryService;
 use App\Service\RefreshTokenService;
 use App\Service\SnapshotDiagnosticsService;
 use App\Service\SnapshotQueryService;
+use App\Service\UnityDevLoginFixture;
 use App\Service\Yii2RestResponseFactory;
 use Predis\Client as RedisClient;
 use Psr\Log\LoggerInterface;
@@ -29,6 +33,27 @@ use Yiisoft\Db\Connection\ConnectionInterface;
  * Business services DI configuration.
  */
 return [
+    IdentityAuthorityClient::class => [
+        'class' => IdentityAuthorityClient::class,
+        '__construct()' => $params['identity'],
+    ],
+    \App\Controller\V1\AuthController::class => [
+        'class' => \App\Controller\V1\AuthController::class,
+        '__construct()' => [
+            'deviceSnRateLimiter' => \Yiisoft\Definitions\Reference::to(DeviceSnRateLimiter::class),
+        ],
+    ],
+    DeviceSnService::class => [
+        'class' => DeviceSnService::class,
+        '__construct()' => [
+            'db' => \Yiisoft\Definitions\Reference::to(ConnectionInterface::class),
+            'identityAuthority' => \Yiisoft\Definitions\Reference::to(IdentityAuthorityClient::class),
+        ],
+    ],
+    DeviceSnRateLimiter::class => [
+        'class' => DeviceSnRateLimiter::class,
+        '__construct()' => ['redis' => \Yiisoft\Definitions\Reference::to(RedisClient::class)],
+    ],
     LoginCodeSettings::class => [
         'class' => LoginCodeSettings::class,
         '__construct()' => [
@@ -50,6 +75,7 @@ return [
             'settings' => \Yiisoft\Definitions\Reference::to(LoginCodeSettings::class),
             'readiness' => \Yiisoft\Definitions\Reference::to(LoginCodeReadinessGate::class),
             'telemetry' => \Yiisoft\Definitions\Reference::to(LoginCodeTelemetry::class),
+            'identityAuthority' => \Yiisoft\Definitions\Reference::to(IdentityAuthorityClient::class),
         ],
     ],
     LoginCodeTelemetry::class => [
@@ -77,6 +103,16 @@ return [
         'class' => RefreshTokenService::class,
         '__construct()' => [
             'redis' => \Yiisoft\Definitions\Reference::to(RedisClient::class),
+            'identityAuthority' => \Yiisoft\Definitions\Reference::to(IdentityAuthorityClient::class),
+        ],
+    ],
+    UnityDevLoginFixture::class => [
+        'class' => UnityDevLoginFixture::class,
+        '__construct()' => [
+            'enabled' => $params['unityDevLoginFixture']['enabled'],
+            'environment' => $params['unityDevLoginFixture']['environment'],
+            'keySha256' => $params['unityDevLoginFixture']['keySha256'],
+            'frontendDomain' => $params['unityDevLoginFixture']['frontendDomain'],
         ],
     ],
     AuthService::class => [
@@ -85,6 +121,9 @@ return [
             'jwtService' => \Yiisoft\Definitions\Reference::to(JwtService::class),
             'refreshTokenService' => \Yiisoft\Definitions\Reference::to(RefreshTokenService::class),
             'loginCodeStore' => \Yiisoft\Definitions\Reference::to(LoginCodeStore::class),
+            'unityDevLoginFixture' => \Yiisoft\Definitions\Reference::to(UnityDevLoginFixture::class),
+            'deviceSnService' => \Yiisoft\Definitions\Reference::to(DeviceSnService::class),
+            'identityAuthority' => \Yiisoft\Definitions\Reference::to(IdentityAuthorityClient::class),
         ],
     ],
     SnapshotQueryService::class => [

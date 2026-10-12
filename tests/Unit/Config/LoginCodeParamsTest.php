@@ -56,6 +56,28 @@ final class LoginCodeParamsTest extends TestCase
         $this->assertSame(LoginCodeSettings::defaultProtocolFingerprint(), $params['loginCode']['protocolFingerprint']);
     }
 
+    public function testUnityFixtureDefaultsDisabledAndCanBeExplicitlyEnabledInDev(): void
+    {
+        $devDefault = $this->loadParams([
+            'YII_ENV' => 'dev',
+            'UNITY_DEV_LOGIN_FIXTURE_ENABLED' => null,
+        ]);
+        $productionDefault = $this->loadParams([
+            'YII_ENV' => 'production',
+            'UNITY_DEV_LOGIN_FIXTURE_ENABLED' => null,
+        ]);
+        $enabledDev = $this->loadParams([
+            'YII_ENV' => 'dev',
+            'UNITY_DEV_LOGIN_FIXTURE_ENABLED' => 'true',
+        ]);
+
+        $this->assertFalse($devDefault['unityDevLoginFixture']['enabled']);
+        $this->assertSame('dev', $devDefault['unityDevLoginFixture']['environment']);
+        $this->assertFalse($productionDefault['unityDevLoginFixture']['enabled']);
+        $this->assertSame('production', $productionDefault['unityDevLoginFixture']['environment']);
+        $this->assertTrue($enabledDev['unityDevLoginFixture']['enabled']);
+    }
+
     /**
      * @param array<string, mixed> $overrides
      * @return array<string, mixed>
@@ -65,7 +87,13 @@ final class LoginCodeParamsTest extends TestCase
         $previousEnvironment = $_ENV;
 
         try {
-            $_ENV = array_merge($_ENV, $overrides);
+            foreach ($overrides as $name => $value) {
+                if ($value === null) {
+                    unset($_ENV[$name]);
+                } else {
+                    $_ENV[$name] = $value;
+                }
+            }
 
             /** @var array<string, mixed> $params */
             $params = require dirname(__DIR__, 3) . '/config/common/params.php';

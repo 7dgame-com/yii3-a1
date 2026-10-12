@@ -16,6 +16,7 @@ use Psr\Log\LoggerInterface;
 final class LoginCodeTelemetry
 {
     public const SOURCE_YII3_REFRESH = 'yii3-refresh';
+    public const SOURCE_YII3_LOGIN_CODE = 'yii3-login-code';
     public const SOURCE_YII3_KEY_TO_TOKEN = 'yii3-key-to-token';
     public const SOURCE_YII3_CONTEXT = 'yii3-login-code-context';
 
@@ -44,6 +45,7 @@ final class LoginCodeTelemetry
     /** @var list<string> */
     private const SOURCES = [
         self::SOURCE_YII3_REFRESH,
+        self::SOURCE_YII3_LOGIN_CODE,
         self::SOURCE_YII3_KEY_TO_TOKEN,
         self::SOURCE_YII3_CONTEXT,
     ];
