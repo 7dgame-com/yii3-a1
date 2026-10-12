@@ -306,10 +306,10 @@ final class SnapshotQueryPropertyTest extends TestCase
     // ---------------------------------------------------------------
 
     /**
-     * Property 12: applyTagFilter adds verse_tags join with correct tag IDs.
+     * Property 12: applyTagFilter matches classification IDs without multiplying rows.
      *
      * For any non-empty set of positive tag IDs, applying the tag filter must
-     * add a verse_tags join and include the tag IDs in the WHERE clause.
+     * add an EXISTS condition containing the requested tag IDs and exclude the old public tag.
      *
      * **Validates: Requirements 4.9**
      *
@@ -323,23 +323,9 @@ final class SnapshotQueryPropertyTest extends TestCase
             ->then(function (array $tagIds): void {
                 // Start with a fresh public query as base
                 $query = $this->snapshotSearch->searchPublic();
-                $joinCountBefore = count($query->getJoins());
-
                 $this->snapshotSearch->applyTagFilter($query, $tagIds);
 
-                // verse_tags join must be added
-                $joins = $query->getJoins();
-                $joinTables = array_map(fn($j) => $j[1], $joins);
-                $this->assertContains(
-                    'verse_tags',
-                    $joinTables,
-                    'applyTagFilter must add verse_tags join for tagIds: ' . implode(',', $tagIds)
-                );
-
-                // WHERE must contain the tag IDs
-                $where = $query->getWhere();
-                $whereStr = json_encode($where);
-                $this->assertStringContainsString('verse_tags.tags_id', $whereStr);
+                $this->assertClassificationFilter($query, $tagIds);
             });
     }
 
@@ -347,7 +333,7 @@ final class SnapshotQueryPropertyTest extends TestCase
      * Property 12b: applyTagFilter with comma-separated string works identically.
      *
      * For any non-empty set of positive tag IDs provided as a comma-separated
-     * string, the filter must add the verse_tags join.
+     * string, the filter must apply the same classification condition.
      *
      * **Validates: Requirements 4.9**
      *
@@ -364,20 +350,18 @@ final class SnapshotQueryPropertyTest extends TestCase
                 $query = $this->snapshotSearch->searchPublic();
                 $this->snapshotSearch->applyTagFilter($query, $tagString);
 
-                // verse_tags join must be added
-                $joins = $query->getJoins();
-                $joinTables = array_map(fn($j) => $j[1], $joins);
-                $this->assertContains(
-                    'verse_tags',
-                    $joinTables,
-                    "applyTagFilter must add verse_tags join for string '{$tagString}'"
-                );
-
-                // WHERE must reference verse_tags.tags_id
-                $where = $query->getWhere();
-                $whereStr = json_encode($where);
-                $this->assertStringContainsString('verse_tags.tags_id', $whereStr);
+                $this->assertClassificationFilter($query, $tagIds);
             });
+    }
+
+    private function assertClassificationFilter(ActiveQuery $query, array $tagIds): void
+    {
+        $where = $query->getWhere();
+        $this->assertSame('exists', $where[2][0]);
+        $classification = $where[2][1];
+        $this->assertSame(['filter_vt' => 'verse_tags'], $classification->getFrom());
+        $this->assertSame(['filter_vt.tags_id' => $tagIds], $classification->getWhere()[2]);
+        $this->assertSame(['or', ['<>', 'filter_tags.key', 'public'], ['filter_tags.key' => null]], $classification->getWhere()[3]);
     }
 
     /**

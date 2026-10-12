@@ -248,7 +248,7 @@ final class SnapshotQueryService
      */
     public function findTags(string $type = 'Classify'): array
     {
-        $cacheKey = "tags_by_type_{$type}";
+        $cacheKey = "tags_by_type_v2_{$type}";
 
         return $this->cache->getOrSet(
             $cacheKey,
@@ -271,6 +271,7 @@ final class SnapshotQueryService
             'page' => $params['page'] ?? 1,
             'pageSize' => $params['pageSize'] ?? 15,
             'tags' => $params['tags'] ?? '',
+            'public' => SnapshotSearch::normalizePublicFilter($params),
         ];
 
         return $prefix . '_' . md5(serialize($relevant));

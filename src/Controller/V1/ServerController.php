@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controller\V1;
 
 use App\Model\Snapshot;
+use App\Search\SnapshotSearch;
 use App\Service\PaginatedResult;
 use App\Service\PaginationService;
 use App\Service\SnapshotQueryService;
@@ -73,6 +74,9 @@ final class ServerController
     public function listPublic(ServerRequestInterface $request): ResponseInterface
     {
         $params = $request->getQueryParams();
+        if (($error = $this->validatePublicFilter($request, $params)) !== null) {
+            return $error;
+        }
         $result = $this->snapshotQueryService->findPublic($params);
         $expandFields = $this->parseExpand($request);
 
@@ -90,6 +94,9 @@ final class ServerController
     public function checkin(ServerRequestInterface $request): ResponseInterface
     {
         $params = $request->getQueryParams();
+        if (($error = $this->validatePublicFilter($request, $params)) !== null) {
+            return $error;
+        }
         $result = $this->snapshotQueryService->findCheckin($params);
         $expandFields = $this->parseExpand($request);
 
@@ -113,6 +120,9 @@ final class ServerController
         }
 
         $params = $request->getQueryParams();
+        if (($error = $this->validatePublicFilter($request, $params)) !== null) {
+            return $error;
+        }
         $result = $this->snapshotQueryService->findPrivate((int) $user['user_id'], $params);
         $expandFields = $this->parseExpand($request);
 
@@ -136,6 +146,9 @@ final class ServerController
         }
 
         $params = $request->getQueryParams();
+        if (($error = $this->validatePublicFilter($request, $params)) !== null) {
+            return $error;
+        }
         $result = $this->snapshotQueryService->findGroup((int) $user['user_id'], $params);
         $expandFields = $this->parseExpand($request);
 
@@ -271,5 +284,15 @@ final class ServerController
     private function createErrorResponse(ServerRequestInterface $request, int $statusCode, string $message): ResponseInterface
     {
         return $this->restResponseFactory->createError($request, $statusCode, $message);
+    }
+
+    private function validatePublicFilter(ServerRequestInterface $request, array $params): ?ResponseInterface
+    {
+        try {
+            SnapshotSearch::normalizePublicFilter($params);
+            return null;
+        } catch (\RuntimeException $exception) {
+            return $this->createErrorResponse($request, 400, $exception->getMessage());
+        }
     }
 }
