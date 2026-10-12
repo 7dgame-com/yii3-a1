@@ -115,6 +115,16 @@ php -S 0.0.0.0:8080 -t public
 | GET | `/v2/tags` | 标签列表 |
 | GET/HEAD | `/v2/system` | 系统状态 |
 
+Y1 的 V1 四种场景列表和 V2 快照列表均支持 `public=1` / `public=0`，按
+`verse_property` 关联的 `property.key=public` 筛选；也接受明确的 `true` / `false`
+字面值。未传参数保持原有范围，非法值返回 HTTP 400。此筛选与 `scope`、当前用户或
+群组权限、`tags` 分类条件同时生效，例如 `/v2/snapshots?scope=private&public=1&tags=2`。
+`scope=public&public=0` 返回空列表，不扩大公开接口范围。
+
+旧 `tags.key=public` 不再出现在标签目录或场景标签关系中，也不参与 `tags` ID 筛选。
+仅传旧 public 标签 ID 返回空列表；与其他标签 ID 混合时，只匹配其他标签。
+本次代码不修改既有属性或标签数据。
+
 ### 其他
 
 | 方法 | 路径 | 说明 |

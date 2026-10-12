@@ -28,11 +28,17 @@ foreach ([
     'CREATE TEMPORARY TABLE snapshot (id INT PRIMARY KEY, verse_id INT, resources JSON, INDEX(verse_id))',
     'CREATE TEMPORARY TABLE group_verse (group_id INT, verse_id INT)',
     'CREATE TEMPORARY TABLE group_user (group_id INT, user_id INT)',
+    'CREATE TEMPORARY TABLE tags (id INT PRIMARY KEY, `key` VARCHAR(255), `type` VARCHAR(255))',
     'CREATE TEMPORARY TABLE verse_tags (verse_id INT, tags_id INT)',
+    'CREATE TEMPORARY TABLE property (id INT PRIMARY KEY, `key` VARCHAR(255))',
+    'CREATE TEMPORARY TABLE verse_property (verse_id INT, property_id INT)',
     "INSERT INTO verse VALUES (1,42,'Owned'),(2,99,'Other account')",
     'INSERT INTO group_verse VALUES (1,1),(1,2)',
     'INSERT INTO group_user VALUES (1,42)',
-    'INSERT INTO verse_tags VALUES (1,7),(2,8)',
+    "INSERT INTO tags VALUES (5,'public','Status'),(7,'class-a','Classify'),(8,'class-b','Classify'),(9,'class-c','Classify')",
+    'INSERT INTO verse_tags VALUES (1,7),(1,9),(2,8),(2,5)',
+    "INSERT INTO property VALUES (1,'public')",
+    'INSERT INTO verse_property VALUES (1,1)',
     'SET SESSION sort_buffer_size=262144',
 ] as $sql) {
     $db->createCommand($sql)->execute();
@@ -59,6 +65,14 @@ $check($ids($service->findPrivate(99, ['pageSize' => 1, 'tags' => '0'])) === [4]
 $check($ids($service->findPrivate(123, [])) === [], 'Empty account must not receive public/other snapshots');
 $check($ids($service->findPrivate(42, ['tags' => '7'])) === [3,1], 'Tag filter preserved');
 $check($ids($service->findPrivate(42, ['tags' => '8'])) === [], 'Tag cannot bypass ownership');
+$check($ids($service->findPrivate(42, ['tags' => '7,9'])) === [3,1], 'Classification OR must not duplicate large JSON snapshots');
+$check($ids($service->findPrivate(42, ['tags' => '7,5'])) === [3,1], 'Legacy public tag mixed with classification is ignored');
+$check($ids($service->findPrivate(99, ['tags' => '5'])) === [], 'Legacy public tag alone cannot act as a classification');
+$check($ids($service->findPrivate(42, ['public' => '1', 'tags' => '7'])) === [3,1], 'Public property AND classification');
+$check($ids($service->findPrivate(42, ['public' => '0', 'tags' => '7'])) === [], 'Non-public property AND classification');
+$check($ids($service->findPrivate(99, ['public' => '1'])) === [], 'Legacy public tag cannot publish a scene');
+$check($ids($service->findPrivate(99, ['public' => '0'])) === [4,2], 'Legacy tag-only scene remains non-public');
 $check($ids($service->findGroup(42, [])) === [4,3,2,1], 'Group ordering with large JSON');
+$check($ids($service->findGroup(42, ['public' => '1'])) === [3,1], 'Public property stays within group scope');
 $check($ids($service->findPrivate(42, ['pageSize' => 1, 'tags' => '0'])) === [3], 'Cache hit');
-echo "PASS: large JSON private/group pagination, ownership, tags, payload, cache isolation\n";
+echo "PASS: large JSON private/group pagination, ownership, classification OR, public properties, legacy tag isolation, payload, cache isolation\n";

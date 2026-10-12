@@ -539,10 +539,12 @@ use Psr\Http\Message\StreamFactoryInterface;
         new OA\QueryParameter(name: 'pageSize', description: 'Page size', schema: new OA\Schema(type: 'integer')),
         new OA\QueryParameter(name: 'page', description: 'Page number', schema: new OA\Schema(type: 'integer')),
         new OA\QueryParameter(name: 'tags', description: 'Comma-separated tag IDs', schema: new OA\Schema(type: 'string')),
+        new OA\QueryParameter(name: 'public', description: 'Scene public property filter: 1/true or 0/false, combined with scope and tags', schema: new OA\Schema(type: 'boolean')),
         new OA\QueryParameter(name: 'expand', description: 'Comma-separated expansion fields', schema: new OA\Schema(type: 'string')),
     ],
     responses: [
         new OA\Response(response: 200, description: 'Public snapshots'),
+        new OA\Response(response: 400, description: 'Invalid public filter'),
     ],
 )]
 #[OA\Get(
@@ -554,10 +556,12 @@ use Psr\Http\Message\StreamFactoryInterface;
         new OA\QueryParameter(name: 'pageSize', description: 'Page size', schema: new OA\Schema(type: 'integer')),
         new OA\QueryParameter(name: 'page', description: 'Page number', schema: new OA\Schema(type: 'integer')),
         new OA\QueryParameter(name: 'tags', description: 'Comma-separated tag IDs', schema: new OA\Schema(type: 'string')),
+        new OA\QueryParameter(name: 'public', description: 'Scene public property filter: 1/true or 0/false, combined with scope and tags', schema: new OA\Schema(type: 'boolean')),
         new OA\QueryParameter(name: 'expand', description: 'Comma-separated expansion fields', schema: new OA\Schema(type: 'string')),
     ],
     responses: [
         new OA\Response(response: 200, description: 'Checkin snapshots'),
+        new OA\Response(response: 400, description: 'Invalid public filter'),
     ],
 )]
 #[OA\Get(
@@ -570,10 +574,12 @@ use Psr\Http\Message\StreamFactoryInterface;
         new OA\QueryParameter(name: 'pageSize', description: 'Page size', schema: new OA\Schema(type: 'integer')),
         new OA\QueryParameter(name: 'page', description: 'Page number', schema: new OA\Schema(type: 'integer')),
         new OA\QueryParameter(name: 'tags', description: 'Comma-separated tag IDs', schema: new OA\Schema(type: 'string')),
+        new OA\QueryParameter(name: 'public', description: 'Scene public property filter: 1/true or 0/false, combined with scope and tags', schema: new OA\Schema(type: 'boolean')),
         new OA\QueryParameter(name: 'expand', description: 'Comma-separated expansion fields', schema: new OA\Schema(type: 'string')),
     ],
     responses: [
         new OA\Response(response: 200, description: 'Private snapshots'),
+        new OA\Response(response: 400, description: 'Invalid public filter'),
         new OA\Response(response: 401, description: 'Unauthorized'),
     ],
 )]
@@ -587,10 +593,12 @@ use Psr\Http\Message\StreamFactoryInterface;
         new OA\QueryParameter(name: 'pageSize', description: 'Page size', schema: new OA\Schema(type: 'integer')),
         new OA\QueryParameter(name: 'page', description: 'Page number', schema: new OA\Schema(type: 'integer')),
         new OA\QueryParameter(name: 'tags', description: 'Comma-separated tag IDs', schema: new OA\Schema(type: 'string')),
+        new OA\QueryParameter(name: 'public', description: 'Scene public property filter: 1/true or 0/false, combined with scope and tags', schema: new OA\Schema(type: 'boolean')),
         new OA\QueryParameter(name: 'expand', description: 'Comma-separated expansion fields', schema: new OA\Schema(type: 'string')),
     ],
     responses: [
         new OA\Response(response: 200, description: 'Group snapshots'),
+        new OA\Response(response: 400, description: 'Invalid public filter'),
         new OA\Response(response: 401, description: 'Unauthorized'),
     ],
 )]
@@ -633,11 +641,12 @@ use Psr\Http\Message\StreamFactoryInterface;
         new OA\QueryParameter(name: 'pageSize', description: 'Page size', schema: new OA\Schema(type: 'integer')),
         new OA\QueryParameter(name: 'page', description: 'Page number', schema: new OA\Schema(type: 'integer')),
         new OA\QueryParameter(name: 'tags', description: 'Comma-separated tag IDs', schema: new OA\Schema(type: 'string')),
+        new OA\QueryParameter(name: 'public', description: 'Scene public property filter: 1/true or 0/false, combined with scope and tags', schema: new OA\Schema(type: 'boolean')),
         new OA\QueryParameter(name: 'expand', description: 'Comma-separated expansion fields', schema: new OA\Schema(type: 'string')),
     ],
     responses: [
         new OA\Response(response: 200, description: 'Snapshots'),
-        new OA\Response(response: 400, description: 'Invalid scope'),
+        new OA\Response(response: 400, description: 'Invalid scope or public filter'),
         new OA\Response(response: 401, description: 'Unauthorized'),
         new OA\Response(response: 403, description: 'Login required'),
     ],

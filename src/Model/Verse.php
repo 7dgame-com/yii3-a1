@@ -66,7 +66,8 @@ class Verse extends ActiveRecord
     public function getTags(): ActiveQuery
     {
         return $this->hasMany(Tags::class, ['id' => 'tags_id'])
-            ->viaTable('verse_tags', ['verse_id' => 'id']);
+            ->viaTable('verse_tags', ['verse_id' => 'id'])
+            ->andWhere(['or', ['<>', 'tags.key', 'public'], ['tags.key' => null]]);
     }
 
     public function relationQuery(string $name): ActiveQuery

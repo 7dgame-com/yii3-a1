@@ -74,6 +74,7 @@ class TagsSearch
     private function createBaseQuery(): ActiveQuery
     {
         return (new ActiveQuery(Tags::class))
-            ->alias('tags');
+            ->alias('tags')
+            ->andWhere(['or', ['<>', 'tags.key', 'public'], ['tags.key' => null]]);
     }
 }
