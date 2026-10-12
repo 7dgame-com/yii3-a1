@@ -240,20 +240,20 @@ final class SnapshotQueryPropertyTest extends TestCase
     }
 
     // ---------------------------------------------------------------
-    // Property 10: 标签查询类型过滤
+    // Property 10: 标签查询不按类型过滤
     // ---------------------------------------------------------------
 
     /**
-     * Property 10: TagsSearch.search() defaults to type = 'Classify'.
+     * Property 10: TagsSearch.search() does not filter on tag type.
      *
-     * For any invocation without explicit type parameter, the WHERE clause
-     * must contain tags.type = 'Classify'.
+     * The default query must retain retired-public exclusion without
+     * adding any tags.type condition.
      *
      * **Validates: Requirements 4.6, 5.6**
      *
      * @eris-repeat 100
      */
-    public function testTagsSearchDefaultsToClassifyType(): void
+    public function testTagsSearchDoesNotFilterByType(): void
     {
         $this->forAll(
             Generator\choose(0, 1)
@@ -266,22 +266,22 @@ final class SnapshotQueryPropertyTest extends TestCase
                 $where = $query->getWhere();
                 $this->assertNotNull($where, 'TagsSearch.search() must have a WHERE clause');
                 $whereStr = json_encode($where);
-                $this->assertStringContainsString('tags.type', $whereStr);
-                $this->assertStringContainsString('Classify', $whereStr);
+                $this->assertStringNotContainsString('tags.type', $whereStr);
+                $this->assertSame($this->tagsSearch->findAll()->getWhere(), $where);
             });
     }
 
     /**
-     * Property 10b: TagsSearch.findByType() filters on the given type.
+     * Property 10b: TagsSearch.search() ignores legacy type parameters.
      *
-     * For any random type string, the WHERE clause must contain that type
-     * associated with tags.type.
+     * For any legacy type value, the query must return the same tag set
+     * as the default query.
      *
      * **Validates: Requirements 4.6, 5.6**
      *
      * @eris-repeat 100
      */
-    public function testTagsFindByTypeFiltersOnGivenType(): void
+    public function testTagsSearchIgnoresLegacyTypeValues(): void
     {
         $typeNames = ['Classify', 'Scene', 'Material', 'Effect', 'Custom'];
 
@@ -289,15 +289,15 @@ final class SnapshotQueryPropertyTest extends TestCase
             Generator\elements(...$typeNames)
         )
             ->then(function (string $type): void {
-                $query = $this->tagsSearch->findByType($type);
+                $query = $this->tagsSearch->search(['type' => $type]);
 
                 $this->assertInstanceOf(ActiveQuery::class, $query);
 
                 $where = $query->getWhere();
-                $this->assertNotNull($where, "findByType('{$type}') must have a WHERE clause");
+                $this->assertNotNull($where, "search(['type' => '{$type}']) must have a WHERE clause");
                 $whereStr = json_encode($where);
-                $this->assertStringContainsString('tags.type', $whereStr);
-                $this->assertStringContainsString($type, $whereStr);
+                $this->assertStringNotContainsString('tags.type', $whereStr);
+                $this->assertSame($this->tagsSearch->search()->getWhere(), $where);
             });
     }
 

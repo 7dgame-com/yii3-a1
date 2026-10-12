@@ -24,7 +24,7 @@ use Yiisoft\Cache\CacheInterface as YiiCacheInterface;
  * - findGroup delegates to SnapshotSearch::searchGroup + PaginationService
  * - findById queries single snapshot by ID
  * - findByVerseId queries single snapshot by verse_id
- * - findTags delegates to TagsSearch::findByType
+ * - findTags delegates to TagsSearch::findAll
  * - All results are cached for 30 seconds
  *
  * Note: PaginationService is final, so we use a real instance.
@@ -413,17 +413,21 @@ final class SnapshotQueryServiceTest extends TestCase
     // ---------------------------------------------------------------
 
     /**
-     * Test findTags delegates to TagsSearch::findByType with default type.
+     * Test findTags returns the full catalog through TagsSearch::findAll.
      * Validates: Requirement 4.6
      */
-    public function testFindTagsDefaultType(): void
+    public function testFindTagsReturnsFullCatalog(): void
     {
         $query = $this->createMock(ActiveQuery::class);
-        $tags = [['id' => 1, 'name' => 'Tag1', 'type' => 'Classify']];
+        $tags = [
+            ['id' => 1, 'name' => 'Tag1'],
+            ['id' => 2, 'name' => 'Tag2'],
+            ['id' => 3, 'name' => 'Tag3'],
+            ['id' => 4, 'name' => 'Tag4'],
+        ];
 
         $this->tagsSearch->expects($this->once())
-            ->method('findByType')
-            ->with('Classify')
+            ->method('findAll')
             ->willReturn($query);
 
         $query->expects($this->once())
@@ -439,16 +443,15 @@ final class SnapshotQueryServiceTest extends TestCase
     }
 
     /**
-     * Test findTags with custom type.
+     * Test findTags returns an empty list when no tags exist.
      * Validates: Requirement 4.6
      */
-    public function testFindTagsCustomType(): void
+    public function testFindTagsReturnsEmptyList(): void
     {
         $query = $this->createMock(ActiveQuery::class);
 
         $this->tagsSearch->expects($this->once())
-            ->method('findByType')
-            ->with('Custom')
+            ->method('findAll')
             ->willReturn($query);
 
         $query->expects($this->once())
@@ -458,7 +461,7 @@ final class SnapshotQueryServiceTest extends TestCase
         $this->cache->method('getOrSet')
             ->willReturnCallback(fn (string $key, callable $cb, int $ttl) => $cb());
 
-        $result = $this->service->findTags('Custom');
+        $result = $this->service->findTags();
 
         $this->assertSame([], $result);
     }
@@ -472,7 +475,7 @@ final class SnapshotQueryServiceTest extends TestCase
         $this->cache->expects($this->once())
             ->method('getOrSet')
             ->willReturnCallback(function (string $key, callable $cb, int $ttl) {
-                $this->assertSame('tags_by_type_v2_Classify', $key);
+                $this->assertSame('tags_all_v3', $key);
                 $this->assertSame(30, $ttl);
                 return [];
             });
@@ -481,10 +484,10 @@ final class SnapshotQueryServiceTest extends TestCase
     }
 
     /**
-     * Test findTags cache key varies by type.
+     * Test findTags reuses one cache key for the full tag catalog.
      * Validates: Requirement 4.10
      */
-    public function testFindTagsCacheKeyVariesByType(): void
+    public function testFindTagsUsesConsistentCacheKey(): void
     {
         $capturedKeys = [];
 
@@ -494,12 +497,12 @@ final class SnapshotQueryServiceTest extends TestCase
                 return [];
             });
 
-        $this->service->findTags('Classify');
-        $this->service->findTags('Custom');
+        $this->service->findTags();
+        $this->service->findTags();
 
         $this->assertCount(2, $capturedKeys);
-        $this->assertSame('tags_by_type_v2_Classify', $capturedKeys[0]);
-        $this->assertSame('tags_by_type_v2_Custom', $capturedKeys[1]);
+        $this->assertSame('tags_all_v3', $capturedKeys[0]);
+        $this->assertSame($capturedKeys[0], $capturedKeys[1]);
     }
 
     // ---------------------------------------------------------------

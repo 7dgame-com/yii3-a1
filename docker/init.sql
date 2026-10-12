@@ -90,7 +90,6 @@ CREATE TABLE IF NOT EXISTS `tags` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `name` varchar(255) DEFAULT NULL,
   `key` varchar(255) DEFAULT NULL,
-  `type` varchar(255) DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `key` (`key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
@@ -253,7 +252,7 @@ VALUES (1, 'testuser', '$2y$10$OMXZUD/PV8H2QRUZb1gKVeElk3Hi4ASoV1QsAjVFE8WhLklUl
 INSERT INTO `property` (`id`, `key`) VALUES (1, 'public'), (2, 'checkin');
 
 -- Test tags
-INSERT INTO `tags` (`id`, `name`, `key`, `type`) VALUES (1, 'Nature', 'nature', 'Classify'), (2, 'City', 'city', 'Classify');
+INSERT INTO `tags` (`id`, `name`, `key`) VALUES (1, 'Nature', 'nature'), (2, 'City', 'city');
 
 -- Test verse
 INSERT INTO `verse` (`id`, `name`, `description`, `uuid`, `author_id`, `image_id`, `created_at`, `updated_at`)
