@@ -24,7 +24,7 @@ use Psr\Http\Message\StreamFactoryInterface;
  * - GET /v1/server/checkin: Checkin snapshots (with pagination and tag filtering)
  * - GET /v1/server/private: Private snapshots for authenticated user
  * - GET /v1/server/group: Group snapshots for authenticated user
- * - GET /v1/server/tags: Tags list (type=Classify)
+ * - GET /v1/server/tags: All available tags
  * - GET /v1/server/snapshot: Single snapshot by id or verse_id
  *
  * All list endpoints return paginated results with X-Pagination-* headers.
@@ -158,15 +158,13 @@ final class ServerController
     /**
      * GET /v1/server/tags
      *
-     * Returns list of tags with type='Classify'.
+     * Returns all available tags, regardless of type.
      *
      * @see Requirement 4.6
      */
     public function tags(ServerRequestInterface $request): ResponseInterface
     {
-        $params = $request->getQueryParams();
-        $type = $params['type'] ?? 'Classify';
-        $tags = $this->snapshotQueryService->findTags((string) $type);
+        $tags = $this->snapshotQueryService->findTags();
 
         return $this->createResponse($request, $tags);
     }

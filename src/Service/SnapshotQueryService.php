@@ -239,20 +239,19 @@ final class SnapshotQueryService
     }
 
     /**
-     * Find tags of a specific type (default: 'Classify').
+     * Find all available tags, regardless of type.
      *
-     * @param string $type Tag type (default: 'Classify')
      * @return array List of tag records
      *
      * @see Requirements 4.6
      */
-    public function findTags(string $type = 'Classify'): array
+    public function findTags(): array
     {
-        $cacheKey = "tags_by_type_v2_{$type}";
+        $cacheKey = 'tags_all_v3';
 
         return $this->cache->getOrSet(
             $cacheKey,
-            fn () => $this->tagsSearch->findByType($type)->all(),
+            fn () => $this->tagsSearch->findAll()->all(),
             self::CACHE_TTL,
         );
     }

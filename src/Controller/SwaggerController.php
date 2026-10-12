@@ -605,11 +605,8 @@ use Psr\Http\Message\StreamFactoryInterface;
 #[OA\Get(
     path: '/v1/server/tags',
     operationId: 'v1ServerTags',
-    summary: 'List tags',
+    summary: 'List all available tags',
     tags: ['V1 Server'],
-    parameters: [
-        new OA\QueryParameter(name: 'type', description: 'Tag type, defaults to Classify', schema: new OA\Schema(type: 'string')),
-    ],
     responses: [
         new OA\Response(response: 200, description: 'Tags'),
     ],
