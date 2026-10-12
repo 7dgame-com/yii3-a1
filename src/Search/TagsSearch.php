@@ -21,16 +21,12 @@ class TagsSearch
      * Search tags with optional filters.
      *
      * @param array $params Search parameters:
-     *   - 'type': string — filter by tag type (default: 'Classify')
      *   - 'name': string — filter by name (partial match)
      * @return ActiveQuery
      */
     public function search(array $params = []): ActiveQuery
     {
         $query = $this->createBaseQuery();
-
-        $type = $params['type'] ?? 'Classify';
-        $query->andWhere(['tags.type' => $type]);
 
         if (!empty($params['name'])) {
             $query->andWhere(['like', 'tags.name', $params['name']]);
@@ -54,16 +50,13 @@ class TagsSearch
     }
 
     /**
-     * Find all tags of a specific type.
+     * Find all available tags, regardless of type.
      *
-     * @param string $type Tag type (default: 'Classify')
      * @return ActiveQuery
      */
-    public function findByType(string $type = 'Classify'): ActiveQuery
+    public function findAll(): ActiveQuery
     {
-        return $this->createBaseQuery()
-            ->andWhere(['tags.type' => $type])
-            ->orderBy(['tags.id' => SORT_ASC]);
+        return $this->search();
     }
 
     /**
@@ -75,6 +68,7 @@ class TagsSearch
     {
         return (new ActiveQuery(Tags::class))
             ->alias('tags')
+            ->select(['tags.id', 'tags.name', 'tags.key'])
             ->andWhere(['or', ['<>', 'tags.key', 'public'], ['tags.key' => null]]);
     }
 }

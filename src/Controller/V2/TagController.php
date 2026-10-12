@@ -15,7 +15,7 @@ use Psr\Http\Message\StreamFactoryInterface;
  * V2 Tag Controller.
  *
  * Provides a read-only endpoint for retrieving tags:
- * - GET /v2/tags — returns the list of tags (type='Classify' by default)
+ * - GET /v2/tags — returns all available tags, regardless of type
  *
  * @see Requirement 5.6
  */

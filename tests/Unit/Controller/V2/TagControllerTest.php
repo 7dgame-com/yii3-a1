@@ -69,16 +69,17 @@ final class TagControllerTest extends TestCase
     public function testIndexReturnsTagList(): void
     {
         $tagData = [
-            ['id' => 1, 'name' => 'Nature', 'type' => 'Classify'],
-            ['id' => 2, 'name' => 'City', 'type' => 'Classify'],
+            ['id' => 1, 'name' => 'Nature'],
+            ['id' => 2, 'name' => 'City'],
+            ['id' => 3, 'name' => 'Learning'],
+            ['id' => 4, 'name' => 'Activity'],
         ];
 
         $query = $this->createMock(ActiveQuery::class);
         $query->method('all')->willReturn($tagData);
 
         $this->tagsSearch->expects($this->once())
-            ->method('findByType')
-            ->with('Classify')
+            ->method('findAll')
             ->willReturn($query);
 
         $this->cache->method('getOrSet')
@@ -87,16 +88,14 @@ final class TagControllerTest extends TestCase
         $capturedBody = null;
         $this->setupSuccessResponse($capturedBody);
 
-        $request = $this->createRequest();
+        $request = $this->createRequest(queryParams: ['type' => 'Classify']);
 
         $this->controller->index($request);
 
         $this->assertNotNull($capturedBody);
         $decoded = json_decode($capturedBody, true);
         $this->assertIsArray($decoded);
-        $this->assertCount(2, $decoded);
-        $this->assertSame('Nature', $decoded[0]['name']);
-        $this->assertSame('City', $decoded[1]['name']);
+        $this->assertSame($tagData, $decoded);
     }
 
     /**
@@ -108,7 +107,7 @@ final class TagControllerTest extends TestCase
         $query = $this->createMock(ActiveQuery::class);
         $query->method('all')->willReturn([]);
 
-        $this->tagsSearch->method('findByType')
+        $this->tagsSearch->method('findAll')
             ->willReturn($query);
 
         $this->cache->method('getOrSet')
@@ -136,7 +135,7 @@ final class TagControllerTest extends TestCase
         $query = $this->createMock(ActiveQuery::class);
         $query->method('all')->willReturn([]);
 
-        $this->tagsSearch->method('findByType')->willReturn($query);
+        $this->tagsSearch->method('findAll')->willReturn($query);
 
         $this->cache->method('getOrSet')
             ->willReturnCallback(fn (string $key, callable $cb, int $ttl) => $cb());
@@ -155,13 +154,13 @@ final class TagControllerTest extends TestCase
     public function testIndexHonorsApplicationXmlAccept(): void
     {
         $tagData = [
-            ['id' => 1, 'name' => 'Nature', 'key' => 'nature', 'type' => 'Classify'],
+            ['id' => 1, 'name' => 'Nature', 'key' => 'nature'],
         ];
 
         $query = $this->createMock(ActiveQuery::class);
         $query->method('all')->willReturn($tagData);
 
-        $this->tagsSearch->method('findByType')->willReturn($query);
+        $this->tagsSearch->method('findAll')->willReturn($query);
         $this->cache->method('getOrSet')
             ->willReturnCallback(fn (string $key, callable $cb, int $ttl) => $cb());
 
@@ -175,7 +174,7 @@ final class TagControllerTest extends TestCase
 
         $this->assertSame('application/xml; charset=UTF-8', $headerCalls['Content-Type']);
         $this->assertSame(
-            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<response><item><id>1</id><name>Nature</name><key>nature</key><type>Classify</type></item></response>\n",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<response><item><id>1</id><name>Nature</name><key>nature</key></item></response>\n",
             $capturedBody,
         );
     }
@@ -184,10 +183,10 @@ final class TagControllerTest extends TestCase
     // Helpers
     // ========================================================================
 
-    private function createRequest(string $accept = '*/*'): ServerRequestInterface
+    private function createRequest(string $accept = '*/*', array $queryParams = []): ServerRequestInterface
     {
         $request = $this->createMock(ServerRequestInterface::class);
-        $request->method('getQueryParams')->willReturn([]);
+        $request->method('getQueryParams')->willReturn($queryParams);
         $request->method('getHeaderLine')
             ->with('Accept')
             ->willReturn($accept);

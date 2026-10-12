@@ -36,34 +36,36 @@ final class TagsSearchTest extends TestCase
         $this->assertInstanceOf(ActiveQuery::class, $query);
     }
 
-    public function testSearchDefaultsToClassifyType(): void
+    public function testSearchDoesNotFilterByType(): void
     {
         $query = $this->search->search();
 
         $where = $query->getWhere();
         $this->assertNotNull($where);
         $whereStr = json_encode($where);
-        $this->assertStringContainsString('Classify', $whereStr);
+        $this->assertStringNotContainsString('tags.type', $whereStr);
     }
 
-    public function testSearchWithCustomType(): void
+    public function testSearchIgnoresLegacyTypeParameter(): void
     {
         $query = $this->search->search(['type' => 'Custom']);
 
         $where = $query->getWhere();
         $this->assertNotNull($where);
         $whereStr = json_encode($where);
-        $this->assertStringContainsString('Custom', $whereStr);
+        $this->assertStringNotContainsString('tags.type', $whereStr);
+        $this->assertSame($this->search->search()->getWhere(), $where);
     }
 
     public function testSearchWithNameFilter(): void
     {
-        $query = $this->search->search(['name' => 'art']);
+        $query = $this->search->search(['name' => 'art', 'type' => 'Custom']);
 
         $where = $query->getWhere();
         $this->assertNotNull($where);
         $whereStr = json_encode($where);
         $this->assertStringContainsString('art', $whereStr);
+        $this->assertStringNotContainsString('tags.type', $whereStr);
     }
 
     public function testFindByIdReturnsActiveQuery(): void
@@ -73,12 +75,13 @@ final class TagsSearchTest extends TestCase
         $this->assertInstanceOf(ActiveQuery::class, $query);
     }
 
-    public function testFindByTypeReturnsActiveQuery(): void
+    public function testFindAllReturnsActiveQuery(): void
     {
-        $query = $this->search->findByType('Classify');
+        $query = $this->search->findAll();
 
         $this->assertInstanceOf(ActiveQuery::class, $query);
         $where = $query->getWhere();
         $this->assertNotNull($where);
+        $this->assertSame($this->search->search()->getWhere(), $where);
     }
 }
