@@ -40,6 +40,7 @@ final class AuthService
         private ?UnityDevLoginFixture $unityDevLoginFixture = null,
         private ?DeviceSnService $deviceSnService = null,
         private ?IdentityAuthorityClient $identityAuthority = null,
+        private ?LegacyRefreshReplayService $legacyRefreshReplay = null,
     ) {
     }
 
@@ -73,7 +74,7 @@ final class AuthService
             throw new RuntimeException('wrong password', 400);
         }
 
-        $tokenData = $this->generateTokenPair((int) $user->get('id'));
+        $tokenData = $this->generateTokenPair((int) $user->get('id'), [], $user);
 
         return [
             'success' => true,
@@ -128,12 +129,18 @@ final class AuthService
     public function refresh(string $refreshToken, array $requestContext = []): array
     {
         if ($this->identityAuthority?->enabled()) {
-            $result = $this->identityResponse($this->identityAuthority->refresh($refreshToken, true, $requestContext), 'refresh');
+            $issued = $this->identityAuthority->refresh($refreshToken, true, $requestContext, '/v1/auth/refresh');
+            if (isset($issued['legacyResponseBody'])) return $this->replayEnvelope($issued['legacyResponseBody'], false);
+            $result = $this->identityResponse($issued, 'refresh');
             unset($result['user']);
             return $result;
         }
         $normalizedToken = $this->normalizeRefreshTokenInput($refreshToken);
-        $session = $this->refreshTokenService->consumeSession($normalizedToken);
+        if ($this->legacyRefreshReplay?->enabled()) {
+            $replayed = $this->rotateWithReplay($normalizedToken, $requestContext);
+            if ($replayed !== null) return $this->replayEnvelope($replayed, false);
+        }
+        $session = $this->legacyRefreshReplay?->enabled() ? null : $this->refreshTokenService->consumeSession($normalizedToken);
         $userId = $session['user_id'] ?? null;
 
         if ($userId === null && !str_starts_with($normalizedToken, 'dsn_')) {
@@ -165,9 +172,16 @@ final class AuthService
     public function refreshTokenOnly(string $refreshToken, array $requestContext = []): array
     {
         if ($this->identityAuthority?->enabled()) {
-            return $this->identityResponse($this->identityAuthority->refresh($refreshToken, false, $requestContext), 'keyToTokenWithUrl');
+            $issued = $this->identityAuthority->refresh($refreshToken, false, $requestContext, '/v2/auth/refresh-token');
+            if (isset($issued['legacyResponseBody'])) return $this->replayEnvelope($issued['legacyResponseBody'], true);
+            return $this->identityResponse($issued, 'keyToTokenWithUrl');
         }
         $normalizedToken = trim($refreshToken);
+        if ($this->legacyRefreshReplay?->enabled()) {
+            $replayed = $this->rotateWithReplay($normalizedToken, $requestContext);
+            if ($replayed === null) throw new RuntimeException('Refresh token is invalid.', 401);
+            return $this->replayEnvelope($replayed, true);
+        }
         $session = $this->refreshTokenService->consumeSession($normalizedToken);
         $userId = $session['user_id'] ?? null;
 
@@ -301,7 +315,7 @@ final class AuthService
             throw new RuntimeException('User is not found.', 400);
         }
 
-        $tokenData = $this->generateTokenPair($userId);
+        $tokenData = $this->generateTokenPair($userId, [], $user);
 
         return [
             'success' => true,
@@ -453,7 +467,7 @@ final class AuthService
             'success' => true,
             'message' => $message,
             'nickname' => $user->get('nickname') ?? '',
-            'token' => $this->generateTokenPair($userId),
+            'token' => $this->generateTokenPair($userId, [], $user),
             'user' => $uniformResponse ? $this->createClientUser($user) : $user,
         ];
 
@@ -481,7 +495,7 @@ final class AuthService
             'success' => true,
             'message' => 'refresh',
             'nickname' => $user->get('nickname') ?? '',
-            'token' => $this->generateTokenPair($userId, $context),
+            'token' => $this->generateTokenPair($userId, $context, $user),
         ];
     }
 
@@ -511,7 +525,7 @@ final class AuthService
             'success' => true,
             'message' => 'keyToTokenWithUrl',
             'nickname' => $user->get('nickname') ?? '',
-            'token' => $this->generateTokenPair((int) $user->get('id'), $context),
+            'token' => $this->generateTokenPair((int) $user->get('id'), $context, $user),
             'user' => $this->createClientUser($user),
         ];
     }
@@ -533,10 +547,13 @@ final class AuthService
      * @param int $userId The user ID to generate tokens for.
      * @return array{accessToken: string, refreshToken: string}
      */
-    private function generateTokenPair(int $userId, array $context = []): array
+    private function generateTokenPair(int $userId, array $context = [], ?User $user = null): array
     {
         $accessToken = $this->jwtService->generateToken($userId, $context);
-        $refreshToken = $this->refreshTokenService->create($userId, $context);
+        $fingerprint = $user === null || !$this->legacyRefreshReplay?->enabled() ? null : LegacyRefreshAccountRepository::fingerprint([
+            'password_hash' => $user->get('password_hash'), 'auth_key' => $user->get('auth_key'),
+        ]);
+        $refreshToken = $this->refreshTokenService->create($userId, $context, $fingerprint);
 
         $now = new \DateTimeImmutable('now', new \DateTimeZone('Asia/Shanghai'));
         $expires = $now->modify('+3 hour');
@@ -546,6 +563,29 @@ final class AuthService
             'expires' => $expires->format('Y-m-d H:i:s'),
             'refreshToken' => $refreshToken,
         ];
+    }
+
+    private function rotateWithReplay(string $token, array $requestContext): ?array
+    {
+        return $this->legacyRefreshReplay->rotate($token, $requestContext,
+            fn (int $userId, array $context) => $this->authorizeDeviceSession($userId, $context),
+            function (array $user, array $context, string $successor): array {
+                $userId = (int) $user['id'];
+                $now = new \DateTimeImmutable('now', new \DateTimeZone('Asia/Shanghai'));
+                return ['token' => ['accessToken' => $this->jwtService->generateToken($userId, $context),
+                    'expires' => $now->modify('+3 hour')->format('Y-m-d H:i:s'), 'refreshToken' => $successor],
+                    'nickname' => (string) ($user['nickname'] ?? ''),
+                    'user' => ['id' => $userId, 'username' => (string) ($user['username'] ?? ''),
+                        'nickname' => (string) ($user['nickname'] ?? ''), 'fixture' => false]];
+            });
+    }
+
+    private function replayEnvelope(array $response, bool $strict): array
+    {
+        $result = ['success' => true, 'message' => $strict ? 'keyToTokenWithUrl' : 'refresh',
+            'nickname' => $response['nickname'], 'token' => $response['token']];
+        if ($strict) $result['user'] = $response['user'];
+        return $result;
     }
 
     private function buildFrontendUrl(string $frontendDomain): string

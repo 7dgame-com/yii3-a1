@@ -41,6 +41,13 @@ if ($path === '/internal/yii3/refresh') {
     if (($body['refreshToken'] ?? '') === 'outage') { http_response_code(503); echo '{}'; return; }
     if (($body['refreshToken'] ?? '') === 'invalid') { http_response_code(401); echo '{}'; return; }
     if (($_SERVER['HTTP_IDEMPOTENCY_KEY'] ?? '') !== 'same-operation') { http_response_code(400); echo '{}'; return; }
+    if (($body['refreshToken'] ?? '') === 'legacy') {
+        if (isset($body['consumer']) || !in_array($body['sourceEndpoint'] ?? '', ['/v1/auth/refresh', '/v2/auth/refresh-token'], true)) { http_response_code(400); echo '{}'; return; }
+        $oldToken = $tokens; $oldToken['expires'] = '2026-10-12 07:32:11';
+        echo json_encode(['authTokens'=>$tokens,'subject'=>$subject,'legacyResponse'=>[
+            'version'=>'legacy-refresh-response-v1','consumer'=>'yii3','endpoint'=>'y1-refresh-pair',
+            'body'=>['token'=>$oldToken,'nickname'=>'original','user'=>['id'=>42,'username'=>'original-user','nickname'=>'original','fixture'=>false]]]]); return;
+    }
     echo json_encode(['authTokens'=>$tokens,'subject'=>$subject]); return;
 }
 if ($path === '/internal/yii3/login-code') {
@@ -72,6 +79,18 @@ PHP);
     private function client(): IdentityAuthorityClient
     {
         return new IdentityAuthorityClient('identity', self::$url, 'fixture-auth', 'fixture-iam', 1000, true);
+    }
+
+    public function testRealHttpKeepsTheOriginalSharedY1PairAndUser(): void
+    {
+        $client = $this->client();
+        $v1 = $client->refresh('legacy', true, ['idempotencyKey' => 'same-operation'], '/v1/auth/refresh');
+        $v2 = $client->refresh('legacy', false, ['idempotencyKey' => 'same-operation'], '/v2/auth/refresh-token');
+        self::assertSame($v1['legacyResponseBody'], $v2['legacyResponseBody']);
+        self::assertSame('original', $v1['legacyResponseBody']['nickname']);
+        self::assertSame('original-user', $v1['legacyResponseBody']['user']['username']);
+        self::assertSame('2026-10-12 07:32:11', $v1['legacyResponseBody']['token']['expires']);
+        self::assertSame('2026-10-12 20:00:00', $v1['authTokens']['expires']);
     }
 
     public function testRealHttpScopesBodyAndIdempotencyReachTheSingleAuthority(): void

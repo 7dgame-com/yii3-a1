@@ -47,6 +47,7 @@ LUA;
     public function __construct(
         private RedisClient $redis,
         private readonly ?IdentityAuthorityClient $identityAuthority = null,
+        private readonly ?LegacyRefreshReplayService $legacyRefreshReplay = null,
     ) {
     }
 
@@ -59,11 +60,16 @@ LUA;
      * @param int $userId The user ID to associate with the token.
      * @return string The generated refresh token string.
      */
-    public function create(int $userId, array $authContext = []): string
+    public function create(int $userId, array $authContext = [], ?string $expectedFingerprint = null): string
     {
         $this->assertLegacy();
         $context = DeviceSnContext::fromArray($authContext);
         $token = ($context === [] ? '' : 'dsn_') . bin2hex(random_bytes($this->tokenLength));
+
+        if ($this->legacyRefreshReplay?->enabled()) {
+            $this->legacyRefreshReplay->create($token, $userId, $context, $expectedFingerprint);
+            return $token;
+        }
 
         $this->redis->setex(
             $this->prefix . $token,
@@ -85,6 +91,7 @@ LUA;
     public function validate(string $token): ?int
     {
         $this->assertLegacy();
+        if ($this->legacyRefreshReplay?->enabled()) return $this->legacyRefreshReplay->validate($token);
         $userId = $this->redis->get($this->prefix . $token);
 
         if ($userId === null) {
@@ -115,6 +122,9 @@ LUA;
     public function consumeSession(string $token): ?array
     {
         $this->assertLegacy();
+        if ($this->legacyRefreshReplay?->enabled()) {
+            throw new \RuntimeException('Atomic refresh replay must use the provenance-aware rotation boundary.', 503);
+        }
         $result = $this->redis->eval(
             self::CONSUME_SCRIPT,
             1,
@@ -154,6 +164,10 @@ LUA;
     public function delete(string $token): void
     {
         $this->assertLegacy();
+        if ($this->legacyRefreshReplay?->enabled()) {
+            $this->legacyRefreshReplay->revoke($token);
+            return;
+        }
         $this->redis->del($this->prefix . $token);
     }
 
@@ -170,23 +184,40 @@ LUA;
     public function deleteByUserId(int $userId): void
     {
         $this->assertLegacy();
-        $cursor = '0';
-        $pattern = $this->prefix . '*';
+        if ($this->legacyRefreshReplay?->enabled()) {
+            $this->legacyRefreshReplay->revokeUser($userId, fn () => $this->removeUserKeys($userId));
+            return;
+        }
+        $this->removeUserKeys($userId);
+    }
 
-        do {
-            [$cursor, $keys] = $this->redis->scan($cursor, ['MATCH' => $pattern, 'COUNT' => 100]);
-
-            if (!empty($keys)) {
-                foreach ($keys as $key) {
-                    $value = $this->redis->get($key);
-                    $stored = is_string($value) ? json_decode($value, true) : null;
-                    $owner = is_array($stored) ? ($stored['user_id'] ?? null) : $value;
-                    if ($owner !== null && (int) $owner === $userId) {
-                        $this->redis->del($key);
-                    }
-                }
-            }
-        } while ($cursor !== '0');
+    private function removeUserKeys(int $userId): void
+    {
+        // Full, read-only namespace preflight before deleting any Y1 key. AR
+        // hashes/counter/list are isolated, never GET as strings or mutated.
+        $inventory = LegacyRefreshNamespaceInspector::scan($this->redis);
+        $keys = []; $values = [];
+        foreach ($inventory['tokens'] as $token) {
+            if ($token['userId'] !== $userId) continue;
+            $keys[] = $this->prefix . $token['raw']; $values[] = $token['value'];
+        }
+        if ($keys === []) return;
+        try {
+            $result = $this->redis->eval(<<<'LUA'
+-- y1-namespace-compare-delete-v1
+-- Compare every target before the first delete, including a late type/owner swap.
+for i, key in ipairs(KEYS) do
+    local kind = redis.call('TYPE', key).ok
+    if kind ~= 'none' and (kind ~= 'string' or redis.call('GET', key) ~= ARGV[i]) then return -1 end
+end
+local removed = 0
+for _, key in ipairs(KEYS) do removed = removed + redis.call('DEL', key) end
+return removed
+LUA, count($keys), ...array_merge($keys, $values));
+            if (!is_int($result) || $result < 0) throw new \RuntimeException();
+        } catch (\Throwable) {
+            throw new \RuntimeException('Refresh namespace changed during revocation.', 503);
+        }
     }
 
     private function assertLegacy(): void

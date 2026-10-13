@@ -30,6 +30,7 @@ final class IdentityAuthorityClientTest extends TestCase
     private array $account = ['id' => 42, 'username' => 'private-user', 'nickname' => 'private-nickname', 'status' => 10, 'roles' => ['user']];
     private array $token = ['accessToken' => 'identity-access', 'refreshToken' => 'identity-refresh', 'expires' => '2026-10-12T12:00:00.000Z'];
     private ?string $domain = 'd.dev.xrugc.com';
+    private ?array $legacyResponse = null;
 
     private function authority(): IdentityAuthorityClient
     {
@@ -43,7 +44,8 @@ final class IdentityAuthorityClientTest extends TestCase
                     '/internal/auth/verify-access-token', '/internal/identity/subjects/42' => ['success' => true, 'data' => $this->account],
                     default => ($payload['operation'] ?? null) === 'context'
                         ? ['frontendDomain' => $this->domain]
-                        : ['authTokens' => $this->token, 'subject' => $this->account, 'frontendDomain' => $this->domain],
+                        : ['authTokens' => $this->token, 'subject' => $this->account, 'frontendDomain' => $this->domain]
+                            + ($this->legacyResponse === null ? [] : ['legacyResponse' => $this->legacyResponse]),
                 };
                 return ['status' => 200, 'body' => $body];
             });
@@ -100,11 +102,67 @@ final class IdentityAuthorityClientTest extends TestCase
         foreach (['bare-old-code', 'web_old-code', 'https://dev.xrugc.com/?web_old-code', 'old-30-day-refresh', 'dsn_old-refresh'] as $value) {
             $result = $auth->refresh($value);
             self::assertSame('refresh', $result['message']); self::assertArrayNotHasKey('user', $result);
-            self::assertSame(['refreshToken' => $value, 'allowLoginCode' => true], end($this->calls)['payload']);
+            self::assertSame(['refreshToken' => $value, 'allowLoginCode' => true, 'sourceEndpoint' => '/v1/auth/refresh'], end($this->calls)['payload']);
         }
         $strict = $auth->refreshTokenOnly('web_old-code');
         self::assertSame('keyToTokenWithUrl', $strict['message']); self::assertArrayHasKey('user', $strict);
         self::assertSame(false, end($this->calls)['payload']['allowLoginCode']);
+        self::assertSame('/v2/auth/refresh-token', end($this->calls)['payload']['sourceEndpoint']);
+    }
+
+    public function testImportedPairPreservesTheSharedOriginalBodyAcrossV1AndV2(): void
+    {
+        $body = ['token' => ['accessToken' => 'identity-access', 'expires' => '2026-10-12 07:32:11', 'refreshToken' => 'identity-refresh'],
+            'nickname' => '原昵称', 'user' => ['id' => 42, 'username' => str_repeat('名', 255), 'nickname' => '旧资料', 'fixture' => false]];
+        $this->legacyResponse = ['version' => 'legacy-refresh-response-v1', 'consumer' => 'yii3', 'endpoint' => 'y1-refresh-pair', 'body' => $body];
+        $auth = $this->auth($this->authority());
+        $v1 = $auth->refresh('old', ['sourceEndpoint' => '/v2/auth/refresh-token', 'consumer' => 'a1']);
+        $v2 = $auth->refreshTokenOnly('old');
+        self::assertSame($body['token'], $v1['token']); self::assertSame($body['nickname'], $v1['nickname']);
+        self::assertArrayNotHasKey('user', $v1); self::assertSame('refresh', $v1['message']);
+        self::assertSame($body['token'], $v2['token']); self::assertSame($body['user'], $v2['user']);
+        self::assertSame('keyToTokenWithUrl', $v2['message']);
+        self::assertSame('/v1/auth/refresh', $this->calls[0]['payload']['sourceEndpoint']);
+        self::assertArrayNotHasKey('consumer', $this->calls[0]['payload']);
+        self::assertSame('/v2/auth/refresh-token', $this->calls[1]['payload']['sourceEndpoint']);
+    }
+
+    public function testImportedPairRejectsWrongScopeOwnerOrTokenWithoutAnyLegacyFallback(): void
+    {
+        $valid = ['version' => 'legacy-refresh-response-v1', 'consumer' => 'yii3', 'endpoint' => 'y1-refresh-pair',
+            'body' => ['token' => ['accessToken' => 'identity-access', 'expires' => '2026-10-12 20:00:00', 'refreshToken' => 'identity-refresh'],
+                'nickname' => 'old', 'user' => ['id' => 42, 'username' => 'old', 'nickname' => 'old', 'fixture' => false]]];
+        $variants = [];
+        foreach (['consumer' => 'a1', 'endpoint' => '/v1/auth/refresh', 'version' => 'unknown', 'extra' => true] as $key => $value) {
+            $candidate = $valid; $candidate[$key] = $value; $variants[] = $candidate;
+        }
+        $candidate = $valid; $candidate['body']['user']['id'] = 99; $variants[] = $candidate;
+        $candidate = $valid; $candidate['body']['token']['accessToken'] = 'other-jwt'; $variants[] = $candidate;
+        $candidate = $valid; $candidate['body']['token']['refreshToken'] = 'other-successor'; $variants[] = $candidate;
+        $candidate = $valid; $candidate['body']['token']['expires'] = '2026-02-31 20:00:00'; $variants[] = $candidate;
+        $candidate = $valid; $candidate['body']['user']['password_hash'] = 'must-not-return'; $variants[] = $candidate;
+        foreach ($variants as $candidate) {
+            $this->legacyResponse = $candidate; $auth = $this->auth($this->authority());
+            try { $auth->refreshTokenOnly('old'); self::fail('Invalid original response accepted.'); }
+            catch (RuntimeException $error) { self::assertSame(503, $error->getCode()); }
+        }
+        self::assertCount(count($variants), $this->calls);
+    }
+
+    public function testImportedResponseCannotEnterTheLoginCodePath(): void
+    {
+        $this->legacyResponse = ['version' => 'legacy-refresh-response-v1'];
+        $this->expectException(RuntimeException::class); $this->expectExceptionCode(503);
+        $this->auth($this->authority())->loginCodeOnly('code');
+    }
+
+    public function testAll256OpaqueRequestBytesSurviveTheBridge(): void
+    {
+        $key = str_repeat('x', 255) . ' ';
+        $this->auth($this->authority())->refresh('old', ['idempotencyKey' => $key]);
+        self::assertSame($key, end($this->calls)['headers']['Idempotency-Key']);
+        $this->expectException(RuntimeException::class); $this->expectExceptionCode(400);
+        $this->auth($this->authority())->refresh('old', ['idempotencyKey' => "opaque\x01key"]);
     }
 
     public function testEveryQrEntryDelegatesAndContextNeverRequestsTokens(): void

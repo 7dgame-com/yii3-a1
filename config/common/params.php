@@ -83,6 +83,11 @@ return [
         'legacyFixtureEnabled' => $booleanEnvironment('UNITY_DEV_LOGIN_FIXTURE_ENABLED', false),
     ],
 
+    'legacyRefreshReplay' => [
+        'enabled' => $booleanEnvironment('Y1_REFRESH_REPLAY_ENABLED', false),
+        'encryptionKey' => $identityEnvironment('Y1_REFRESH_REPLAY_KEY'),
+    ],
+
     // Aliases for Yii3 path resolution
     'yiisoft/aliases' => [
         'aliases' => [

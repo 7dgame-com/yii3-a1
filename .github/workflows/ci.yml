@@ -108,10 +108,79 @@ jobs:
           TEST_MYSQL_PASSWORD: root
         run: php tests/manual/private_snapshot_large_payload_probe.php
 
+  refresh_replay_test:
+    name: Mandatory isolated refresh replay MySQL and Redis
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # This job gets its own runner and fresh services. It never reuses test/mrpp.
+    services:
+      codex-y1-refresh-mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+          MYSQL_ROOT_HOST: "%"
+          MYSQL_DATABASE: y1_refresh_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -uroot"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=20
+      codex-y1-refresh-redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+      - name: Setup PHP matching the runtime major
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: pdo, pdo_mysql, pdo_sqlite, redis, zip
+          coverage: none
+          tools: composer:v2
+      - name: Install locked dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction --optimize-autoloader
+      - name: Bind dedicated fixture names only to this runner
+        run: |
+          set -euo pipefail
+          for name in codex-y1-refresh-mysql codex-y1-refresh-redis; do
+            if getent hosts "${name}" >/dev/null; then
+              echo 'Fixture alias already exists; refusing to override it.' >&2
+              exit 1
+            fi
+          done
+          printf '%s\n' '127.0.0.1 codex-y1-refresh-mysql codex-y1-refresh-redis' | sudo tee -a /etc/hosts >/dev/null
+          for name in codex-y1-refresh-mysql codex-y1-refresh-redis; do
+            test "$(getent ahostsv4 "${name}" | awk '{print $1}' | sort -u)" = '127.0.0.1'
+          done
+      - name: Run every real refresh fixture without skips
+        env:
+          Y1_REFRESH_FIXTURE: "1"
+          MYSQL_HOST: codex-y1-refresh-mysql
+          MYSQL_DB: y1_refresh_test
+          MYSQL_USER: root
+          MYSQL_PASS: ""
+          REDIS_HOST: codex-y1-refresh-redis
+          REDIS_PORT: "6379"
+          REDIS_DB: "0"
+          IDENTITY_DATA_SOURCE: legacy
+          IDENTITY_INDEPENDENT_READY: "false"
+          Y1_REFRESH_REPLAY_ENABLED: "false"
+          Y1_REFRESH_REPLAY_KEY: ""
+        run: php tests/manual/run_refresh_replay_ci.php
+
   candidate:
     name: Publish fixed development candidate
     runs-on: ubuntu-latest
-    needs: test
+    needs: [test, refresh_replay_test]
     if: >-
       (github.event_name == 'workflow_dispatch' && inputs.publish_candidate == true) ||
       (github.event_name == 'push' && (
@@ -178,7 +247,7 @@ jobs:
   build:
     name: Build Docker image
     runs-on: ubuntu-latest
-    needs: test
+    needs: [test, refresh_replay_test]
     if: >-
       github.event_name == 'push' && (
         github.ref == 'refs/heads/publish' ||

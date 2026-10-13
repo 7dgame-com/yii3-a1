@@ -18,6 +18,7 @@ class User extends ActiveRecord
     public string $username = '';
     public ?string $auth_key = null;
     public string $password_hash = '';
+    public int $status = 10;
     public ?string $password_reset_token = null;
     public ?string $nickname = null;
     public ?int $created_at = null;

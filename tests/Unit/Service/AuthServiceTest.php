@@ -8,6 +8,10 @@ use App\Model\User;
 use App\Service\AuthService;
 use App\Service\DeviceSnService;
 use App\Service\JwtService;
+use App\Service\LegacyRefreshAccountRepository;
+use App\Service\LegacyRefreshReplayService;
+use App\Service\LegacyRefreshReplaySettings;
+use App\Service\LegacyRefreshReplayStore;
 use App\Service\LoginCodeSettings;
 use App\Service\LoginCodeStore;
 use App\Service\RefreshTokenService;
@@ -1300,6 +1304,52 @@ final class AuthServiceTest extends TestCase
         $this->refreshTokenService->delete($result['token']['refreshToken']);
     }
 
+    public function testReplayFeatureKeepsV1V2ResponseContractsAndOriginalPair(): void
+    {
+        [$auth, $refresh] = $this->replayAuth();
+        $old = $refresh->create(42);
+        $first = $auth->refresh($old, ['idempotencyKey' => 'fixture-request']);
+        self::assertSame($first, $auth->refresh($old, ['idempotencyKey' => 'fixture-request']));
+        self::assertSame(['success', 'message', 'nickname', 'token'], array_keys($first));
+        self::assertSame('refresh', $first['message']);
+        $strict = $auth->refreshTokenOnly($old, ['idempotencyKey' => 'fixture-request']);
+        self::assertSame($first['token'], $strict['token']);
+        self::assertSame('keyToTokenWithUrl', $strict['message']);
+        self::assertSame(['id' => 42, 'username' => 'test-user', 'nickname' => 'testuser', 'fixture' => false], $strict['user']);
+        $auth->logout($old);
+        try { $auth->refresh($old); self::fail('Known revoked refresh must not become a QR lookup.'); }
+        catch (RuntimeException $error) { self::assertSame(401, $error->getCode()); }
+    }
+
+    public function testReplayFeatureKeepsBothLegacyAndStrictQrReusableByTwoDevices(): void
+    {
+        $code = str_repeat('a', 64);
+        $linked = ['id' => 1, 'user_id' => 42, 'key' => hash('sha256', $code), 'created_at' => $this->shanghaiTime('now')];
+        $user = $this->userQueryRow + ['auth_key' => null, 'status' => 10];
+        $this->useLinkedLoginCodeConnection([$linked, $user, $linked, $user, $linked, $user, $linked, $user]);
+        [$auth] = $this->replayAuth();
+        $legacyOne = $auth->refresh($code); $legacyTwo = $auth->refresh('web_' . $code);
+        $strictOne = $auth->loginCodeOnly($code); $strictTwo = $auth->keyToTokenWithUrl('web_' . $code);
+        $tokens = array_map(fn ($response) => $response['token']['refreshToken'], [$legacyOne, $legacyTwo, $strictOne, $strictTwo]);
+        self::assertCount(4, array_unique($tokens));
+        self::assertSame('refresh', $legacyOne['message']);
+        self::assertSame('keyToTokenWithUrl', $strictOne['message']);
+        foreach ($tokens as $token) $this->redis->del('refresh_token:' . $token);
+    }
+
+    private function replayAuth(): array
+    {
+        $user = $this->userQueryRow + ['auth_key' => null, 'status' => 10, '_identity_account_epoch' => '1'];
+        $accounts = new class($user) extends LegacyRefreshAccountRepository {
+            public function __construct(private array $user) {}
+            public function withLockedUser(int $id, callable $operation, bool $requireActive = true): mixed { return $operation($this->user); }
+        };
+        $settings = new LegacyRefreshReplaySettings(true, rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '='));
+        $replay = new LegacyRefreshReplayService(new LegacyRefreshReplayStore($this->redis, $settings), $accounts);
+        $refresh = new RefreshTokenService($this->redis, null, $replay);
+        return [new AuthService($this->jwtService, $refresh, $this->databaseLoginCodeStore, null, null, null, $replay), $refresh];
+    }
+
     private function useLinkedLoginCodeConnection(array $queryOneResults): void
     {
         $command = $this->createMock(CommandInterface::class);
@@ -1323,6 +1373,10 @@ final class AuthServiceTest extends TestCase
             'key' => $col,
             'created_at' => $col,
             'nickname' => $col,
+            'username' => $col,
+            'password_hash' => $col,
+            'auth_key' => $col,
+            'status' => $col,
         ]);
         $tableSchema->method('getColumn')->willReturn($col);
         $tableSchema->method('getPrimaryKey')->willReturn(['id']);

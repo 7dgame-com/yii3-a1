@@ -33,6 +33,21 @@ use Yiisoft\Db\Connection\ConnectionInterface;
  * Business services DI configuration.
  */
 return [
+    \App\Service\LegacyRefreshReplaySettings::class => [
+        'class' => \App\Service\LegacyRefreshReplaySettings::class,
+        '__construct()' => $params['legacyRefreshReplay'],
+    ],
+    \App\Service\LegacyRefreshAccountRepository::class => [
+        'class' => \App\Service\LegacyRefreshAccountRepository::class,
+        '__construct()' => ['db' => \Yiisoft\Definitions\Reference::to(ConnectionInterface::class)],
+    ],
+    \App\Service\LegacyRefreshReplayStore::class => [
+        'class' => \App\Service\LegacyRefreshReplayStore::class,
+        '__construct()' => [
+            'redis' => \Yiisoft\Definitions\Reference::to(RedisClient::class),
+            'settings' => \Yiisoft\Definitions\Reference::to(\App\Service\LegacyRefreshReplaySettings::class),
+        ],
+    ],
     IdentityAuthorityClient::class => [
         'class' => IdentityAuthorityClient::class,
         '__construct()' => $params['identity'],
@@ -104,6 +119,7 @@ return [
         '__construct()' => [
             'redis' => \Yiisoft\Definitions\Reference::to(RedisClient::class),
             'identityAuthority' => \Yiisoft\Definitions\Reference::to(IdentityAuthorityClient::class),
+            'legacyRefreshReplay' => \Yiisoft\Definitions\Reference::to(\App\Service\LegacyRefreshReplayService::class),
         ],
     ],
     UnityDevLoginFixture::class => [
@@ -124,6 +140,7 @@ return [
             'unityDevLoginFixture' => \Yiisoft\Definitions\Reference::to(UnityDevLoginFixture::class),
             'deviceSnService' => \Yiisoft\Definitions\Reference::to(DeviceSnService::class),
             'identityAuthority' => \Yiisoft\Definitions\Reference::to(IdentityAuthorityClient::class),
+            'legacyRefreshReplay' => \Yiisoft\Definitions\Reference::to(\App\Service\LegacyRefreshReplayService::class),
         ],
     ],
     SnapshotQueryService::class => [
