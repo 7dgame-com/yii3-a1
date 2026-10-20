@@ -36,6 +36,7 @@ final class SnapshotQueryService
      *   - 'page': int (default 1)
      *   - 'pageSize': int (default 15)
      *   - 'tags': string — comma-separated tag IDs
+     *   - 'properties': string|array — property keys, all required (AND)
      * @return PaginatedResult
      *
      * @see Requirements 4.2
@@ -64,6 +65,7 @@ final class SnapshotQueryService
      *   - 'page': int (default 1)
      *   - 'pageSize': int (default 15)
      *   - 'tags': string — comma-separated tag IDs
+     *   - 'properties': string|array — property keys, all required (AND)
      * @return PaginatedResult
      *
      * @see Requirements 4.3
@@ -93,6 +95,7 @@ final class SnapshotQueryService
      *   - 'page': int (default 1)
      *   - 'pageSize': int (default 15)
      *   - 'tags': string — comma-separated tag IDs
+     *   - 'properties': string|array — property keys, all required (AND)
      * @return PaginatedResult
      *
      * @see Requirements 4.4
@@ -122,6 +125,7 @@ final class SnapshotQueryService
      *   - 'page': int (default 1)
      *   - 'pageSize': int (default 15)
      *   - 'tags': string — comma-separated tag IDs
+     *   - 'properties': string|array — property keys, all required (AND)
      * @return PaginatedResult
      *
      * @see Requirements 4.5
@@ -271,6 +275,7 @@ final class SnapshotQueryService
             'pageSize' => $params['pageSize'] ?? 15,
             'tags' => $params['tags'] ?? '',
             'public' => SnapshotSearch::normalizePublicFilter($params),
+            'properties' => SnapshotSearch::normalizePropertiesFilter($params),
         ];
 
         return $prefix . '_' . md5(serialize($relevant));
