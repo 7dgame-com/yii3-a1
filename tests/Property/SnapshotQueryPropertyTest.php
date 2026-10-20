@@ -12,6 +12,7 @@ use PHPUnit\Framework\TestCase;
 use Yiisoft\ActiveRecord\ActiveQuery;
 use Yiisoft\Db\Connection\ConnectionInterface;
 use Yiisoft\Db\Connection\ConnectionProvider;
+use Yiisoft\Db\Query\Query;
 
 /**
  * Property-based tests for V1 ServerController scene query correctness.
@@ -46,10 +47,10 @@ final class SnapshotQueryPropertyTest extends TestCase
     // ---------------------------------------------------------------
 
     /**
-     * Property 7a: searchPublic always builds a query with property.key = 'public'.
+     * Property 7a: searchPublic always requires the public property.
      *
-     * For any invocation, the WHERE clause must contain 'public' and the query
-     * must join verse_property and property tables using the A1 query shape.
+     * The scope uses a correlated EXISTS so duplicate associations do not
+     * multiply snapshot rows.
      *
      * **Validates: Requirements 4.2, 5.1**
      *
@@ -65,27 +66,16 @@ final class SnapshotQueryPropertyTest extends TestCase
 
                 $this->assertInstanceOf(ActiveQuery::class, $query);
 
-                // WHERE must contain property.key = 'public'
-                $where = $query->getWhere();
-                $this->assertNotNull($where, 'searchPublic must have a WHERE clause');
-                $whereStr = json_encode($where);
-                $this->assertStringContainsString('property.key', $whereStr);
-                $this->assertStringContainsString('public', $whereStr);
-
-                // Must join verse_property and property, without the extra verse join.
-                $joins = $query->getJoins();
-                $joinTables = array_map(fn($j) => $j[1], $joins);
-                $this->assertNotContains('verse', $joinTables);
-                $this->assertContains('verse_property', $joinTables);
-                $this->assertContains('property', $joinTables);
+                $this->assertPropertyScope($query, 'public');
+                $this->assertSame([], $query->getJoins());
             });
     }
 
     /**
-     * Property 7b: searchCheckin always builds a query with property.key = 'checkin'.
+     * Property 7b: searchCheckin always requires the checkin property.
      *
-     * For any invocation, the WHERE clause must contain 'checkin' and the query
-     * must join verse_property and property tables using the A1 query shape.
+     * The scope uses a correlated EXISTS so duplicate associations do not
+     * multiply snapshot rows.
      *
      * **Validates: Requirements 4.3, 5.2**
      *
@@ -101,24 +91,13 @@ final class SnapshotQueryPropertyTest extends TestCase
 
                 $this->assertInstanceOf(ActiveQuery::class, $query);
 
-                // WHERE must contain property.key = 'checkin'
-                $where = $query->getWhere();
-                $this->assertNotNull($where, 'searchCheckin must have a WHERE clause');
-                $whereStr = json_encode($where);
-                $this->assertStringContainsString('property.key', $whereStr);
-                $this->assertStringContainsString('checkin', $whereStr);
-
-                // Must join verse_property and property, without the extra verse join.
-                $joins = $query->getJoins();
-                $joinTables = array_map(fn($j) => $j[1], $joins);
-                $this->assertNotContains('verse', $joinTables);
-                $this->assertContains('verse_property', $joinTables);
-                $this->assertContains('property', $joinTables);
+                $this->assertPropertyScope($query, 'checkin');
+                $this->assertSame([], $query->getJoins());
             });
     }
 
     /**
-     * Property 7c: searchPublic and searchCheckin produce mutually exclusive filters.
+     * Property 7c: public and checkin retain independent scope predicates.
      *
      * The public query must NOT contain 'checkin' in its property filter,
      * and the checkin query must NOT contain 'public' in its property filter.
@@ -127,7 +106,7 @@ final class SnapshotQueryPropertyTest extends TestCase
      *
      * @eris-repeat 100
      */
-    public function testPublicAndCheckinFiltersAreMutuallyExclusive(): void
+    public function testPublicAndCheckinKeepIndependentScopePredicates(): void
     {
         $this->forAll(
             Generator\choose(0, 1)
@@ -136,18 +115,30 @@ final class SnapshotQueryPropertyTest extends TestCase
                 $publicQuery = $this->snapshotSearch->searchPublic();
                 $checkinQuery = $this->snapshotSearch->searchCheckin();
 
-                $publicWhere = json_encode($publicQuery->getWhere());
-                $checkinWhere = json_encode($checkinQuery->getWhere());
-
-                // Extract the property.key value from each WHERE
-                // public query should filter on 'public', not 'checkin'
-                $this->assertStringContainsString('"property.key":"public"', $publicWhere);
-                $this->assertStringNotContainsString('"property.key":"checkin"', $publicWhere);
-
-                // checkin query should filter on 'checkin', not 'public'
-                $this->assertStringContainsString('"property.key":"checkin"', $checkinWhere);
-                $this->assertStringNotContainsString('"property.key":"public"', $checkinWhere);
+                $this->assertPropertyScope($publicQuery, 'public');
+                $this->assertPropertyScope($checkinQuery, 'checkin');
             });
+    }
+
+    private function assertPropertyScope(ActiveQuery $query, string $key): void
+    {
+        $where = $query->getWhere();
+        $this->assertIsArray($where);
+        $this->assertCount(2, $where);
+        $this->assertSame('exists', $where[0]);
+        $this->assertInstanceOf(Query::class, $where[1]);
+
+        $property = $where[1];
+        $this->assertSame(['filter_vp' => 'verse_property'], $property->getFrom());
+        $joins = $property->getJoins();
+        $this->assertCount(1, $joins);
+        $this->assertSame('property AS filter_p', $joins[0][1]);
+        $this->assertSame('{{filter_p}}.[[id]] = {{filter_vp}}.[[property_id]]', $joins[0][2]);
+        $this->assertSame([
+            'and',
+            '{{filter_vp}}.[[verse_id]] = {{snapshot}}.[[verse_id]]',
+            ['filter_p.key' => $key],
+        ], $property->getWhere());
     }
 
     // ---------------------------------------------------------------

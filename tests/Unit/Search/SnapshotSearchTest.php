@@ -10,6 +10,7 @@ use PHPUnit\Framework\TestCase;
 use Yiisoft\ActiveRecord\ActiveQuery;
 use Yiisoft\Db\Connection\ConnectionInterface;
 use Yiisoft\Db\Connection\ConnectionProvider;
+use Yiisoft\Db\Query\Query;
 
 /**
  * Unit tests for SnapshotSearch service class.
@@ -38,20 +39,15 @@ final class SnapshotSearchTest extends TestCase
         $this->assertInstanceOf(ActiveQuery::class, $query);
     }
 
-    public function testSearchPublicJoinsPropertyTable(): void
+    public function testSearchPublicUsesPropertyExistsWithoutOuterJoins(): void
     {
         $query = $this->search->searchPublic();
 
-        $joins = $query->getJoins();
-        $this->assertNotEmpty($joins, 'searchPublic should have joins');
-
-        // Should match A1 shape: verse_property + property, no extra verse join.
-        $joinTables = array_map(fn($j) => $j[1], $joins);
-        $this->assertContains('verse_property', $joinTables);
-        $this->assertContains('property', $joinTables);
+        $this->assertSame([], $query->getJoins(), 'Property associations must not multiply snapshot rows');
+        $this->assertPropertyScope($query, 'public');
     }
 
-    public function testSearchPublicUsesA1JoinShapeWithoutVerseOrForcedOrder(): void
+    public function testSearchPublicDoesNotJoinVerseOrForceOrder(): void
     {
         $query = $this->search->searchPublic();
 
@@ -65,12 +61,7 @@ final class SnapshotSearchTest extends TestCase
     {
         $query = $this->search->searchPublic();
 
-        $where = $query->getWhere();
-        $this->assertNotNull($where, 'searchPublic should have a WHERE clause');
-
-        // The where clause should contain property.key = 'public'
-        $whereStr = json_encode($where);
-        $this->assertStringContainsString('public', $whereStr);
+        $this->assertPropertyScope($query, 'public');
     }
 
     public function testSearchPublicAppliesA1ExactFilters(): void
@@ -122,19 +113,15 @@ final class SnapshotSearchTest extends TestCase
         $this->assertInstanceOf(ActiveQuery::class, $query);
     }
 
-    public function testSearchCheckinJoinsPropertyTable(): void
+    public function testSearchCheckinUsesPropertyExistsWithoutOuterJoins(): void
     {
         $query = $this->search->searchCheckin();
 
-        $joins = $query->getJoins();
-        $this->assertNotEmpty($joins, 'searchCheckin should have joins');
-
-        $joinTables = array_map(fn($j) => $j[1], $joins);
-        $this->assertContains('verse_property', $joinTables);
-        $this->assertContains('property', $joinTables);
+        $this->assertSame([], $query->getJoins(), 'Property associations must not multiply snapshot rows');
+        $this->assertPropertyScope($query, 'checkin');
     }
 
-    public function testSearchCheckinUsesA1JoinShapeWithoutVerseOrForcedOrder(): void
+    public function testSearchCheckinDoesNotJoinVerseOrForceOrder(): void
     {
         $query = $this->search->searchCheckin();
 
@@ -148,11 +135,28 @@ final class SnapshotSearchTest extends TestCase
     {
         $query = $this->search->searchCheckin();
 
-        $where = $query->getWhere();
-        $this->assertNotNull($where, 'searchCheckin should have a WHERE clause');
+        $this->assertPropertyScope($query, 'checkin');
+    }
 
-        $whereStr = json_encode($where);
-        $this->assertStringContainsString('checkin', $whereStr);
+    private function assertPropertyScope(ActiveQuery $query, string $key): void
+    {
+        $where = $query->getWhere();
+        $this->assertIsArray($where);
+        $this->assertCount(2, $where);
+        $this->assertSame('exists', $where[0]);
+        $this->assertInstanceOf(Query::class, $where[1]);
+
+        $property = $where[1];
+        $this->assertSame(['filter_vp' => 'verse_property'], $property->getFrom());
+        $joins = $property->getJoins();
+        $this->assertCount(1, $joins);
+        $this->assertSame('property AS filter_p', $joins[0][1]);
+        $this->assertSame('{{filter_p}}.[[id]] = {{filter_vp}}.[[property_id]]', $joins[0][2]);
+        $this->assertSame([
+            'and',
+            '{{filter_vp}}.[[verse_id]] = {{snapshot}}.[[verse_id]]',
+            ['filter_p.key' => $key],
+        ], $property->getWhere());
     }
 
     public function testSearchPrivateReturnsActiveQuery(): void

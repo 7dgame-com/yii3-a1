@@ -55,7 +55,9 @@ final class SnapshotController
      * - group: Group snapshots (auth required)
      * - private: Private snapshots (auth required)
      *
-     * Supports query parameters: scope, pageSize, page, tags.
+     * Supports scope, pageSize, page, tags (tag IDs, OR), properties (property keys, AND), public.
+     * Properties accepts a CSV string or string array and intersects the existing scope,
+     * public filter and user/group access restrictions without adding property metadata.
      *
      * @see Requirements 5.1, 5.2, 5.3, 5.4
      */
@@ -110,7 +112,7 @@ final class SnapshotController
      */
     private function handlePublic(ServerRequestInterface $request, array $params, array $expandFields): ResponseInterface
     {
-        if (($error = $this->validatePublicFilter($request, $params)) !== null) {
+        if (($error = $this->validateSnapshotFilters($request, $params)) !== null) {
             return $error;
         }
         $result = $this->snapshotQueryService->findPublic($params);
@@ -122,7 +124,7 @@ final class SnapshotController
      */
     private function handleCheckin(ServerRequestInterface $request, array $params, array $expandFields): ResponseInterface
     {
-        if (($error = $this->validatePublicFilter($request, $params)) !== null) {
+        if (($error = $this->validateSnapshotFilters($request, $params)) !== null) {
             return $error;
         }
         $result = $this->snapshotQueryService->findCheckin($params);
@@ -139,7 +141,7 @@ final class SnapshotController
             return $this->createErrorResponse($request, 403, 'Login required.');
         }
 
-        if (($error = $this->validatePublicFilter($request, $params)) !== null) {
+        if (($error = $this->validateSnapshotFilters($request, $params)) !== null) {
             return $error;
         }
         $result = $this->snapshotQueryService->findGroup((int) $user['user_id'], $params);
@@ -156,7 +158,7 @@ final class SnapshotController
             return $this->createErrorResponse($request, 403, 'Login required.');
         }
 
-        if (($error = $this->validatePublicFilter($request, $params)) !== null) {
+        if (($error = $this->validateSnapshotFilters($request, $params)) !== null) {
             return $error;
         }
         $result = $this->snapshotQueryService->findPrivate((int) $user['user_id'], $params);
@@ -222,10 +224,11 @@ final class SnapshotController
         return $this->restResponseFactory->createError($request, $statusCode, $message);
     }
 
-    private function validatePublicFilter(ServerRequestInterface $request, array $params): ?ResponseInterface
+    private function validateSnapshotFilters(ServerRequestInterface $request, array $params): ?ResponseInterface
     {
         try {
             SnapshotSearch::normalizePublicFilter($params);
+            SnapshotSearch::normalizePropertiesFilter($params);
             return null;
         } catch (\RuntimeException $exception) {
             return $this->createErrorResponse($request, 400, $exception->getMessage());

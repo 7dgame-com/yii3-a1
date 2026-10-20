@@ -33,9 +33,7 @@ class SnapshotSearch
     {
         $query = $this->createBaseQuery($params);
 
-        $query->innerJoin('verse_property', '{{verse_property}}.[[verse_id]] = {{snapshot}}.[[verse_id]]')
-            ->innerJoin('property', '{{property}}.[[id]] = {{verse_property}}.[[property_id]]')
-            ->andWhere(['property.key' => 'public']);
+        $query->andWhere(['exists', $this->propertyQuery($query, 'public')]);
 
         if (!empty($params['tags'])) {
             $this->applyTagFilter($query, $params['tags']);
@@ -59,9 +57,7 @@ class SnapshotSearch
     {
         $query = $this->createBaseQuery($params);
 
-        $query->innerJoin('verse_property', '{{verse_property}}.[[verse_id]] = {{snapshot}}.[[verse_id]]')
-            ->innerJoin('property', '{{property}}.[[id]] = {{verse_property}}.[[property_id]]')
-            ->andWhere(['property.key' => 'checkin']);
+        $query->andWhere(['exists', $this->propertyQuery($query, 'checkin')]);
 
         if (!empty($params['tags'])) {
             $this->applyTagFilter($query, $params['tags']);
@@ -175,16 +171,64 @@ class SnapshotSearch
 
         $public = self::normalizePublicFilter($params);
         if ($public !== null) {
-            $publicProperty = (new Query($query->getModel()->db()))
-                ->from(['public_filter_vp' => 'verse_property'])
-                ->select(['public_filter_vp.verse_id'])
-                ->innerJoin('property AS public_filter_p', '{{public_filter_p}}.[[id]] = {{public_filter_vp}}.[[property_id]]')
-                ->where('{{public_filter_vp}}.[[verse_id]] = {{snapshot}}.[[verse_id]]')
-                ->andWhere(['public_filter_p.key' => 'public']);
+            $publicProperty = $this->propertyQuery($query, 'public');
             $query->andWhere([$public === 1 ? 'exists' : 'not exists', $publicProperty]);
         }
 
+        // Each requested key must exist on this verse. EXISTS keeps pagination
+        // stable even when legacy data contains duplicate property associations.
+        foreach (self::normalizePropertiesFilter($params) as $key) {
+            $query->andWhere(['exists', $this->propertyQuery($query, $key)]);
+        }
+
         return $this->applyBaseFilters($query, $params);
+    }
+
+    private function propertyQuery(ActiveQuery $query, string $key): Query
+    {
+        return (new Query($query->getModel()->db()))
+            ->select(['filter_vp.verse_id'])
+            ->from(['filter_vp' => 'verse_property'])
+            ->innerJoin('property AS filter_p', '{{filter_p}}.[[id]] = {{filter_vp}}.[[property_id]]')
+            ->where('{{filter_vp}}.[[verse_id]] = {{snapshot}}.[[verse_id]]')
+            ->andWhere(['filter_p.key' => $key]);
+    }
+
+    /**
+     * Canonical property keys shared by query construction and cache lookup.
+     * CSV strings separate keys; array items are complete keys, including commas.
+     * An omitted filter preserves the scope, but an invalid filter must not widen it.
+     *
+     * @return list<string>
+     */
+    public static function normalizePropertiesFilter(array $params): array
+    {
+        if (!array_key_exists('properties', $params)) {
+            return [];
+        }
+
+        $value = $params['properties'];
+        $keys = is_string($value) ? explode(',', $value) : $value;
+        if (!is_array($keys) || $keys === [] || count($keys) > 50) {
+            throw new \RuntimeException('properties must contain 1 to 50 property keys.', 400);
+        }
+
+        $normalized = [];
+        foreach ($keys as $key) {
+            if (!is_string($key) || preg_match('//u', $key) !== 1 || preg_match('/\p{Cc}/u', $key) !== 0) {
+                throw new \RuntimeException('properties must contain valid UTF-8 strings without control characters.', 400);
+            }
+            $key = trim($key);
+            if (preg_match('/\A.{1,255}\z/us', $key) !== 1) {
+                throw new \RuntimeException('Each property key must contain 1 to 255 characters.', 400);
+            }
+            $normalized[] = $key;
+        }
+
+        $normalized = array_values(array_unique($normalized, SORT_STRING));
+        sort($normalized, SORT_STRING);
+
+        return $normalized;
     }
 
     /**
