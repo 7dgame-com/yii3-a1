@@ -121,6 +121,33 @@ Y1 的 V1 四种场景列表和 V2 快照列表均支持 `public=1` / `public=0`
 群组权限、`tags` 分类条件同时生效，例如 `/v2/snapshots?scope=private&public=1&tags=2`。
 `scope=public&public=0` 返回空列表，不扩大公开接口范围。
 
+上述 V1 四种场景列表和 `/v2/snapshots` 也支持 `properties`，按属性 **key** 筛选，
+不是属性 ID。多个属性取 **AND**：`properties=public,checkin` 只返回同时关联
+`public` 和 `checkin` 的场景快照。`tags=2,3` 仍取 OR；`properties`、`tags`、
+`public` 参数与原有 scope、当前用户或群组权限取交集，不扩大可访问范围。
+
+```http
+GET /v2/snapshots?properties=public&expand=id,verse_id,name
+GET /v2/snapshots?properties=public,checkin&expand=id,verse_id,name
+GET /v2/snapshots?scope=private&properties=education&tags=2,3
+GET /v1/server/public?properties=public,checkin
+```
+
+未指定 `scope` 时仍为 `public`，因此 `?properties=checkin` 只返回同时具有
+`public`、`checkin` 的快照；如需沿用打卡范围，使用
+`?scope=checkin&properties=checkin`。`private`、`group` 仍要求 JWT 登录。
+这是快照列表筛选，不是全局场景查询，也不在响应中新增属性详情。
+
+`properties` 接受逗号分隔字符串，也接受
+`properties[]=public&properties[]=checkin` 字符串数组。数组每项是完整 key，
+不再按逗号拆分；含逗号的 key 应使用数组形式，并对 URL 正常编码。服务端对 key
+去除首尾空白、去重和排序。未传参数不额外筛选；未知 key 返回空列表。
+传入空值、空项、非字符串或非字符串数组、无效 UTF-8、控制字符、超过 255 个 Unicode
+字符的 key 或超过 50 个 key，返回 HTTP 400。
+
+列表继续使用既有的 30 秒缓存；属性筛选条件纳入缓存键。属性关联变更或删除后，
+已缓存的筛选结果可能在缓存到期后才更新。
+
 旧 `tags.key=public` 不再出现在标签目录或场景标签关系中，也不参与 `tags` ID 筛选。
 仅传旧 public 标签 ID 返回空列表；与其他标签 ID 混合时，只匹配其他标签。
 本次代码不修改既有属性或标签数据。

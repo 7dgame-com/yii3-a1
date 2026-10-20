@@ -20,14 +20,17 @@ use Psr\Http\Message\StreamFactoryInterface;
  *
  * Handles scene/snapshot query endpoints:
  * - GET /v1/server/test: Test response
- * - GET /v1/server/public: Public snapshots (with pagination and tag filtering)
- * - GET /v1/server/checkin: Checkin snapshots (with pagination and tag filtering)
+ * - GET /v1/server/public: Public snapshots (with pagination, tag and property filtering)
+ * - GET /v1/server/checkin: Checkin snapshots (with pagination, tag and property filtering)
  * - GET /v1/server/private: Private snapshots for authenticated user
  * - GET /v1/server/group: Group snapshots for authenticated user
  * - GET /v1/server/tags: All available tags
  * - GET /v1/server/snapshot: Single snapshot by id or verse_id
  *
  * All list endpoints return paginated results with X-Pagination-* headers.
+ * Snapshot lists accept property keys (AND) and tag IDs (OR), intersected with
+ * the endpoint scope, public filter and existing user/group access restrictions.
+ * Properties may be a CSV string or a string array; filtering adds no property metadata.
  * Error responses use Yii2-compatible {status, message} format.
  *
  * @see Requirements 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 4.9
@@ -67,14 +70,14 @@ final class ServerController
      * GET /v1/server/public
      *
      * Returns paginated list of public snapshots.
-     * Supports query parameters: pageSize, page, tags (comma-separated tag IDs).
+     * Supports pageSize, page, tags (tag IDs, OR), properties (property keys, AND), public.
      *
      * @see Requirements 4.2, 4.8, 4.9
      */
     public function listPublic(ServerRequestInterface $request): ResponseInterface
     {
         $params = $request->getQueryParams();
-        if (($error = $this->validatePublicFilter($request, $params)) !== null) {
+        if (($error = $this->validateSnapshotFilters($request, $params)) !== null) {
             return $error;
         }
         $result = $this->snapshotQueryService->findPublic($params);
@@ -87,14 +90,14 @@ final class ServerController
      * GET /v1/server/checkin
      *
      * Returns paginated list of checkin snapshots.
-     * Supports query parameters: pageSize, page, tags (comma-separated tag IDs).
+     * Supports pageSize, page, tags (tag IDs, OR), properties (property keys, AND), public.
      *
      * @see Requirements 4.3, 4.8, 4.9
      */
     public function checkin(ServerRequestInterface $request): ResponseInterface
     {
         $params = $request->getQueryParams();
-        if (($error = $this->validatePublicFilter($request, $params)) !== null) {
+        if (($error = $this->validateSnapshotFilters($request, $params)) !== null) {
             return $error;
         }
         $result = $this->snapshotQueryService->findCheckin($params);
@@ -108,7 +111,7 @@ final class ServerController
      *
      * Returns paginated list of private snapshots for the authenticated user.
      * Requires JWT authentication (user data from request attribute).
-     * Supports query parameters: pageSize, page, tags (comma-separated tag IDs).
+     * Supports pageSize, page, tags (tag IDs, OR), properties (property keys, AND), public.
      *
      * @see Requirements 4.4, 4.8, 4.9
      */
@@ -120,7 +123,7 @@ final class ServerController
         }
 
         $params = $request->getQueryParams();
-        if (($error = $this->validatePublicFilter($request, $params)) !== null) {
+        if (($error = $this->validateSnapshotFilters($request, $params)) !== null) {
             return $error;
         }
         $result = $this->snapshotQueryService->findPrivate((int) $user['user_id'], $params);
@@ -134,7 +137,7 @@ final class ServerController
      *
      * Returns paginated list of group snapshots for the authenticated user.
      * Requires JWT authentication (user data from request attribute).
-     * Supports query parameters: pageSize, page, tags (comma-separated tag IDs).
+     * Supports pageSize, page, tags (tag IDs, OR), properties (property keys, AND), public.
      *
      * @see Requirements 4.5, 4.8, 4.9
      */
@@ -146,7 +149,7 @@ final class ServerController
         }
 
         $params = $request->getQueryParams();
-        if (($error = $this->validatePublicFilter($request, $params)) !== null) {
+        if (($error = $this->validateSnapshotFilters($request, $params)) !== null) {
             return $error;
         }
         $result = $this->snapshotQueryService->findGroup((int) $user['user_id'], $params);
@@ -284,10 +287,11 @@ final class ServerController
         return $this->restResponseFactory->createError($request, $statusCode, $message);
     }
 
-    private function validatePublicFilter(ServerRequestInterface $request, array $params): ?ResponseInterface
+    private function validateSnapshotFilters(ServerRequestInterface $request, array $params): ?ResponseInterface
     {
         try {
             SnapshotSearch::normalizePublicFilter($params);
+            SnapshotSearch::normalizePropertiesFilter($params);
             return null;
         } catch (\RuntimeException $exception) {
             return $this->createErrorResponse($request, 400, $exception->getMessage());

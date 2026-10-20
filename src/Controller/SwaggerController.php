@@ -538,13 +538,21 @@ use Psr\Http\Message\StreamFactoryInterface;
     parameters: [
         new OA\QueryParameter(name: 'pageSize', description: 'Page size', schema: new OA\Schema(type: 'integer')),
         new OA\QueryParameter(name: 'page', description: 'Page number', schema: new OA\Schema(type: 'integer')),
-        new OA\QueryParameter(name: 'tags', description: 'Comma-separated tag IDs', schema: new OA\Schema(type: 'string')),
+        new OA\QueryParameter(name: 'tags', description: 'Comma-separated tag IDs; match any requested tag (OR)', schema: new OA\Schema(type: 'string')),
+        new OA\QueryParameter(
+            name: 'properties',
+            description: 'Property keys, not IDs; all keys must match (AND). Accepts CSV (properties=public,checkin) or PHP string-array query syntax (properties[]=public&properties[]=checkin). Array items are complete keys, including any comma. Keys are trimmed, deduplicated and sorted; at most 50 keys, each at most 255 Unicode characters. Empty values/items, invalid types, UTF-8 or control characters return 400; unknown keys return an empty list. Intersects scope, public and tags without widening access or adding property metadata. Existing list cache TTL is 30 seconds.',
+            schema: new OA\Schema(oneOf: [
+                new OA\Schema(type: 'string', example: 'public,checkin'),
+                new OA\Schema(type: 'array', items: new OA\Items(type: 'string'), example: ['public', 'checkin']),
+            ]),
+        ),
         new OA\QueryParameter(name: 'public', description: 'Scene public property filter: 1/true or 0/false, combined with scope and tags', schema: new OA\Schema(type: 'boolean')),
         new OA\QueryParameter(name: 'expand', description: 'Comma-separated expansion fields', schema: new OA\Schema(type: 'string')),
     ],
     responses: [
         new OA\Response(response: 200, description: 'Public snapshots'),
-        new OA\Response(response: 400, description: 'Invalid public filter'),
+        new OA\Response(response: 400, description: 'Invalid public or properties filter'),
     ],
 )]
 #[OA\Get(
@@ -555,13 +563,21 @@ use Psr\Http\Message\StreamFactoryInterface;
     parameters: [
         new OA\QueryParameter(name: 'pageSize', description: 'Page size', schema: new OA\Schema(type: 'integer')),
         new OA\QueryParameter(name: 'page', description: 'Page number', schema: new OA\Schema(type: 'integer')),
-        new OA\QueryParameter(name: 'tags', description: 'Comma-separated tag IDs', schema: new OA\Schema(type: 'string')),
+        new OA\QueryParameter(name: 'tags', description: 'Comma-separated tag IDs; match any requested tag (OR)', schema: new OA\Schema(type: 'string')),
+        new OA\QueryParameter(
+            name: 'properties',
+            description: 'Property keys, not IDs; all keys must match (AND). Accepts CSV (properties=public,checkin) or PHP string-array query syntax (properties[]=public&properties[]=checkin). Array items are complete keys, including any comma. Keys are trimmed, deduplicated and sorted; at most 50 keys, each at most 255 Unicode characters. Empty values/items, invalid types, UTF-8 or control characters return 400; unknown keys return an empty list. Intersects scope, public and tags without widening access or adding property metadata. Existing list cache TTL is 30 seconds.',
+            schema: new OA\Schema(oneOf: [
+                new OA\Schema(type: 'string', example: 'public,checkin'),
+                new OA\Schema(type: 'array', items: new OA\Items(type: 'string'), example: ['public', 'checkin']),
+            ]),
+        ),
         new OA\QueryParameter(name: 'public', description: 'Scene public property filter: 1/true or 0/false, combined with scope and tags', schema: new OA\Schema(type: 'boolean')),
         new OA\QueryParameter(name: 'expand', description: 'Comma-separated expansion fields', schema: new OA\Schema(type: 'string')),
     ],
     responses: [
         new OA\Response(response: 200, description: 'Checkin snapshots'),
-        new OA\Response(response: 400, description: 'Invalid public filter'),
+        new OA\Response(response: 400, description: 'Invalid public or properties filter'),
     ],
 )]
 #[OA\Get(
@@ -573,13 +589,21 @@ use Psr\Http\Message\StreamFactoryInterface;
     parameters: [
         new OA\QueryParameter(name: 'pageSize', description: 'Page size', schema: new OA\Schema(type: 'integer')),
         new OA\QueryParameter(name: 'page', description: 'Page number', schema: new OA\Schema(type: 'integer')),
-        new OA\QueryParameter(name: 'tags', description: 'Comma-separated tag IDs', schema: new OA\Schema(type: 'string')),
+        new OA\QueryParameter(name: 'tags', description: 'Comma-separated tag IDs; match any requested tag (OR)', schema: new OA\Schema(type: 'string')),
+        new OA\QueryParameter(
+            name: 'properties',
+            description: 'Property keys, not IDs; all keys must match (AND). Accepts CSV (properties=public,checkin) or PHP string-array query syntax (properties[]=public&properties[]=checkin). Array items are complete keys, including any comma. Keys are trimmed, deduplicated and sorted; at most 50 keys, each at most 255 Unicode characters. Empty values/items, invalid types, UTF-8 or control characters return 400; unknown keys return an empty list. Intersects scope, public and tags without widening access or adding property metadata. Existing list cache TTL is 30 seconds.',
+            schema: new OA\Schema(oneOf: [
+                new OA\Schema(type: 'string', example: 'public,checkin'),
+                new OA\Schema(type: 'array', items: new OA\Items(type: 'string'), example: ['public', 'checkin']),
+            ]),
+        ),
         new OA\QueryParameter(name: 'public', description: 'Scene public property filter: 1/true or 0/false, combined with scope and tags', schema: new OA\Schema(type: 'boolean')),
         new OA\QueryParameter(name: 'expand', description: 'Comma-separated expansion fields', schema: new OA\Schema(type: 'string')),
     ],
     responses: [
         new OA\Response(response: 200, description: 'Private snapshots'),
-        new OA\Response(response: 400, description: 'Invalid public filter'),
+        new OA\Response(response: 400, description: 'Invalid public or properties filter'),
         new OA\Response(response: 401, description: 'Unauthorized'),
     ],
 )]
@@ -592,13 +616,21 @@ use Psr\Http\Message\StreamFactoryInterface;
     parameters: [
         new OA\QueryParameter(name: 'pageSize', description: 'Page size', schema: new OA\Schema(type: 'integer')),
         new OA\QueryParameter(name: 'page', description: 'Page number', schema: new OA\Schema(type: 'integer')),
-        new OA\QueryParameter(name: 'tags', description: 'Comma-separated tag IDs', schema: new OA\Schema(type: 'string')),
+        new OA\QueryParameter(name: 'tags', description: 'Comma-separated tag IDs; match any requested tag (OR)', schema: new OA\Schema(type: 'string')),
+        new OA\QueryParameter(
+            name: 'properties',
+            description: 'Property keys, not IDs; all keys must match (AND). Accepts CSV (properties=public,checkin) or PHP string-array query syntax (properties[]=public&properties[]=checkin). Array items are complete keys, including any comma. Keys are trimmed, deduplicated and sorted; at most 50 keys, each at most 255 Unicode characters. Empty values/items, invalid types, UTF-8 or control characters return 400; unknown keys return an empty list. Intersects scope, public and tags without widening access or adding property metadata. Existing list cache TTL is 30 seconds.',
+            schema: new OA\Schema(oneOf: [
+                new OA\Schema(type: 'string', example: 'public,checkin'),
+                new OA\Schema(type: 'array', items: new OA\Items(type: 'string'), example: ['public', 'checkin']),
+            ]),
+        ),
         new OA\QueryParameter(name: 'public', description: 'Scene public property filter: 1/true or 0/false, combined with scope and tags', schema: new OA\Schema(type: 'boolean')),
         new OA\QueryParameter(name: 'expand', description: 'Comma-separated expansion fields', schema: new OA\Schema(type: 'string')),
     ],
     responses: [
         new OA\Response(response: 200, description: 'Group snapshots'),
-        new OA\Response(response: 400, description: 'Invalid public filter'),
+        new OA\Response(response: 400, description: 'Invalid public or properties filter'),
         new OA\Response(response: 401, description: 'Unauthorized'),
     ],
 )]
@@ -630,20 +662,28 @@ use Psr\Http\Message\StreamFactoryInterface;
     path: '/v2/snapshots',
     operationId: 'v2SnapshotsIndex',
     summary: 'List snapshots by scope',
-    description: 'scope=group and scope=private require a JWT bearer token.',
+    description: 'Default scope is public. Property filtering only narrows that scope; it does not query all scenes. scope=group and scope=private require a JWT bearer token.',
     tags: ['V2'],
     security: [['bearerAuth' => []]],
     parameters: [
-        new OA\QueryParameter(name: 'scope', description: 'Snapshot scope', schema: new OA\Schema(type: 'string', enum: ['public', 'checkin', 'group', 'private'])),
+        new OA\QueryParameter(name: 'scope', description: 'Snapshot scope; defaults to public, including when properties is present', schema: new OA\Schema(type: 'string', enum: ['public', 'checkin', 'group', 'private'], default: 'public')),
         new OA\QueryParameter(name: 'pageSize', description: 'Page size', schema: new OA\Schema(type: 'integer')),
         new OA\QueryParameter(name: 'page', description: 'Page number', schema: new OA\Schema(type: 'integer')),
-        new OA\QueryParameter(name: 'tags', description: 'Comma-separated tag IDs', schema: new OA\Schema(type: 'string')),
+        new OA\QueryParameter(name: 'tags', description: 'Comma-separated tag IDs; match any requested tag (OR)', schema: new OA\Schema(type: 'string')),
+        new OA\QueryParameter(
+            name: 'properties',
+            description: 'Property keys, not IDs; all keys must match (AND). Accepts CSV (properties=public,checkin) or PHP string-array query syntax (properties[]=public&properties[]=checkin). Array items are complete keys, including any comma. Keys are trimmed, deduplicated and sorted; at most 50 keys, each at most 255 Unicode characters. Empty values/items, invalid types, UTF-8 or control characters return 400; unknown keys return an empty list. Intersects scope, public and tags without widening access or adding property metadata. Existing list cache TTL is 30 seconds.',
+            schema: new OA\Schema(oneOf: [
+                new OA\Schema(type: 'string', example: 'public,checkin'),
+                new OA\Schema(type: 'array', items: new OA\Items(type: 'string'), example: ['public', 'checkin']),
+            ]),
+        ),
         new OA\QueryParameter(name: 'public', description: 'Scene public property filter: 1/true or 0/false, combined with scope and tags', schema: new OA\Schema(type: 'boolean')),
         new OA\QueryParameter(name: 'expand', description: 'Comma-separated expansion fields', schema: new OA\Schema(type: 'string')),
     ],
     responses: [
         new OA\Response(response: 200, description: 'Snapshots'),
-        new OA\Response(response: 400, description: 'Invalid scope or public filter'),
+        new OA\Response(response: 400, description: 'Invalid scope, public or properties filter'),
         new OA\Response(response: 401, description: 'Unauthorized'),
         new OA\Response(response: 403, description: 'Login required'),
     ],
