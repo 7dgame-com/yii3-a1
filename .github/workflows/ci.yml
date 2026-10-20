@@ -108,6 +108,13 @@ jobs:
           TEST_MYSQL_PASSWORD: root
         run: php tests/manual/private_snapshot_large_payload_probe.php
 
+      - name: Verify property filtering on MySQL
+        env:
+          TEST_MYSQL_DSN: mysql:host=127.0.0.1;dbname=mrpp
+          TEST_MYSQL_USER: root
+          TEST_MYSQL_PASSWORD: root
+        run: php tests/manual/properties_filter_probe.php
+
   candidate:
     name: Publish fixed development candidate
     runs-on: ubuntu-latest
@@ -174,6 +181,7 @@ jobs:
         with:
           name: yii3-a1-candidate-image-provenance-${{ github.sha }}
           path: candidate-image.json
+
 
   build:
     name: Build Docker image
