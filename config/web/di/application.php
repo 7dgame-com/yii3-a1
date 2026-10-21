@@ -11,6 +11,8 @@ use Yiisoft\Yii\Http\Application;
  * Configures the middleware pipeline for the HTTP application.
  */
 return [
+    EventDispatcherInterface::class => static fn (\Yiisoft\EventDispatcher\Dispatcher\Dispatcher $dispatcher): EventDispatcherInterface =>
+        new \App\Admission\AdmissionEventDispatcher($dispatcher),
     Application::class => static function (
         MiddlewareDispatcher $dispatcher,
         EventDispatcherInterface $eventDispatcher,

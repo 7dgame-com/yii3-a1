@@ -38,6 +38,7 @@ class DeviceSnService
      */
     public function authenticate(string $sn, string $uuid, bool $activate): array
     {
+        \App\Admission\AdmissionLeaseScope::assertWriter();
         $digest = DeviceSnCredential::digest($sn);
         $uuid = self::normalizeUuid($uuid);
         $transaction = null;
@@ -139,6 +140,7 @@ class DeviceSnService
 
     public function recordLogin(int $snId): void
     {
+        \App\Admission\AdmissionLeaseScope::assertWriter();
         try {
             $this->execute('UPDATE `device_sn` SET `last_login_at` = :now WHERE `id` = :id', [
                 ':now' => gmdate('Y-m-d H:i:s'), ':id' => $snId,

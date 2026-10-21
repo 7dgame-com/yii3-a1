@@ -124,6 +124,7 @@ class LegacyRefreshReplayStore
 
     private function run(string $operation, array $arguments): array
     {
+        if (!in_array($operation, ['inspect', 'epoch', 'capture'], true)) \App\Admission\AdmissionLeaseScope::assertWriter();
         try {
             $result = json_decode((string) $this->redis->eval($this->script, 0, $operation,
                 json_encode($arguments, JSON_THROW_ON_ERROR)), true, 32, JSON_THROW_ON_ERROR);

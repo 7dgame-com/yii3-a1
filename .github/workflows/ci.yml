@@ -177,10 +177,71 @@ jobs:
           Y1_REFRESH_REPLAY_KEY: ""
         run: php tests/manual/run_refresh_replay_ci.php
 
+  admission_http_test:
+    name: Mandatory real Yii3 admission HTTP lifecycle
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Fresh runner/services; no application database, private image or sibling checkout.
+    services:
+      codex-y1-namespace-mysql-20261013:
+        image: mysql:8.0
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+          MYSQL_ROOT_HOST: "%"
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=20
+      codex-y1-namespace-redis-20261013:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=10
+    steps:
+      - name: Checkout Y1 only
+        uses: actions/checkout@v5
+      - name: Setup Node for the reviewed protocol
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Setup real PHP and database clients
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: curl, pdo, pdo_mysql, pdo_sqlite, redis, zip, mbstring, intl
+          coverage: none
+          tools: composer:v2
+      - name: Install locked dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction --optimize-autoloader
+      - name: Bind dedicated fixture names only to this runner
+        run: |
+          set -euo pipefail
+          for name in codex-y1-namespace-mysql-20261013 codex-y1-namespace-redis-20261013; do
+            if getent hosts "${name}" >/dev/null; then
+              echo 'Fixture alias already exists; refusing to override it.' >&2
+              exit 1
+            fi
+          done
+          printf '%s\n' '127.0.0.1 codex-y1-namespace-mysql-20261013 codex-y1-namespace-redis-20261013' | sudo tee -a /etc/hosts >/dev/null
+          for name in codex-y1-namespace-mysql-20261013 codex-y1-namespace-redis-20261013; do
+            test "$(getent ahostsv4 "${name}" | awk '{print $1}' | sort -u)" = '127.0.0.1'
+          done
+      - name: Require all 41 real HTTP cases with zero skips
+        env:
+          Y1_ADMISSION_FIXTURE_MODE: ci-loopback
+        run: node tests/manual/run_admission_http_ci.mjs
+
   candidate:
     name: Publish fixed development candidate
     runs-on: ubuntu-latest
-    needs: [test, refresh_replay_test]
+    needs: [test, refresh_replay_test, admission_http_test]
     if: >-
       (github.event_name == 'workflow_dispatch' && inputs.publish_candidate == true) ||
       (github.event_name == 'push' && (
@@ -247,7 +308,7 @@ jobs:
   build:
     name: Build Docker image
     runs-on: ubuntu-latest
-    needs: [test, refresh_replay_test]
+    needs: [test, refresh_replay_test, admission_http_test]
     if: >-
       github.event_name == 'push' && (
         github.ref == 'refs/heads/publish' ||

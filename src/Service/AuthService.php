@@ -59,6 +59,7 @@ final class AuthService
      */
     public function login(string $username, string $password, array $requestContext = []): array
     {
+        \App\Admission\AdmissionLeaseScope::assertWriter();
         if ($this->identityAuthority?->enabled()) {
             return $this->identityResponse($this->identityAuthority->login($username, $password, $requestContext), 'login');
         }
@@ -96,6 +97,7 @@ final class AuthService
      */
     public function loginV2(string $username, string $password, array $requestContext = []): array
     {
+        \App\Admission\AdmissionLeaseScope::assertWriter();
         if ($this->identityAuthority?->enabled()) {
             return $this->identityResponse($this->identityAuthority->login($username, $password, $requestContext), 'keyToTokenWithUrl');
         }
@@ -128,6 +130,7 @@ final class AuthService
      */
     public function refresh(string $refreshToken, array $requestContext = []): array
     {
+        \App\Admission\AdmissionLeaseScope::assertWriter();
         if ($this->identityAuthority?->enabled()) {
             $issued = $this->identityAuthority->refresh($refreshToken, true, $requestContext, '/v1/auth/refresh');
             if (isset($issued['legacyResponseBody'])) return $this->replayEnvelope($issued['legacyResponseBody'], false);
@@ -171,6 +174,7 @@ final class AuthService
      */
     public function refreshTokenOnly(string $refreshToken, array $requestContext = []): array
     {
+        \App\Admission\AdmissionLeaseScope::assertWriter();
         if ($this->identityAuthority?->enabled()) {
             $issued = $this->identityAuthority->refresh($refreshToken, false, $requestContext, '/v2/auth/refresh-token');
             if (isset($issued['legacyResponseBody'])) return $this->replayEnvelope($issued['legacyResponseBody'], true);
@@ -197,6 +201,7 @@ final class AuthService
     /** SN chooses identity; the existing y1 issuer still owns both tokens. */
     public function loginDeviceSn(string $sn, string $uuid, bool $activate, array $requestContext = []): array
     {
+        \App\Admission\AdmissionLeaseScope::assertWriter();
         if ($this->identityAuthority?->enabled()) {
             if ($this->deviceSnService === null) throw new RuntimeException('Device SN authentication is unavailable.', 503);
             $identity = $this->deviceSnService->authenticate($sn, $uuid, $activate);
@@ -236,6 +241,7 @@ final class AuthService
 
     public function logout(string $refreshToken): array
     {
+        \App\Admission\AdmissionLeaseScope::assertWriter();
         if ($this->identityAuthority?->enabled()) return $this->identityAuthority->logout($refreshToken);
         $this->refreshTokenService->delete(trim($refreshToken));
         return ['success' => true, 'message' => 'logout'];
@@ -261,6 +267,7 @@ final class AuthService
      */
     public function loginCodeOnly(string $loginCode, array $requestContext = []): array
     {
+        \App\Admission\AdmissionLeaseScope::assertWriter();
         if ($this->identityAuthority?->enabled()) {
             return $this->identityResponse($this->identityAuthority->loginCode($loginCode, false, $requestContext), 'keyToTokenWithUrl', true, true);
         }
@@ -288,6 +295,7 @@ final class AuthService
      */
     public function keyToToken(string $key, array $requestContext = []): array
     {
+        \App\Admission\AdmissionLeaseScope::assertWriter();
         if ($this->identityAuthority?->enabled()) {
             return $this->identityResponse($this->identityAuthority->loginCode($key, false, $requestContext), 'keyToToken');
         }
@@ -344,6 +352,7 @@ final class AuthService
      */
     public function keyToTokenWithUrl(string $key, array $requestContext = []): array
     {
+        \App\Admission\AdmissionLeaseScope::assertWriter();
         if ($this->identityAuthority?->enabled()) {
             return $this->identityResponse($this->identityAuthority->loginCode($key, false, $requestContext), 'keyToTokenWithUrl', true);
         }
@@ -364,6 +373,7 @@ final class AuthService
      */
     public function loginCodeContext(string $key, array $requestContext = []): array
     {
+        \App\Admission\AdmissionLeaseScope::assertWriter();
         if ($this->identityAuthority?->enabled()) {
             return ['success' => true, 'message' => 'loginCodeContext'] + $this->identityAuthority->loginCode($key, true, $requestContext);
         }

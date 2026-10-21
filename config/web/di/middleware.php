@@ -12,6 +12,7 @@ use Psr\Container\ContainerInterface;
  * Registers middleware classes into the DI container.
  */
 return [
+    \App\Middleware\AdmissionMiddleware::class => \App\Middleware\AdmissionMiddleware::class,
     CorsMiddleware::class => CorsMiddleware::class,
     JwtAuthMiddleware::class => JwtAuthMiddleware::class,
     SnapshotScopeAuthMiddleware::class => static function (ContainerInterface $container): SnapshotScopeAuthMiddleware {

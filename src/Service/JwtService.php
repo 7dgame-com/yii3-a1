@@ -76,6 +76,7 @@ final class JwtService
      */
     public function generateToken(int $userId, array $authContext = []): string
     {
+        \App\Admission\AdmissionLeaseScope::assertWriter();
         if ($this->identityAuthority?->enabled()) throw new \RuntimeException('Local token issuance is retired.', 503);
         $now = $this->clock->now();
 

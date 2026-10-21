@@ -62,6 +62,7 @@ LUA;
      */
     public function create(int $userId, array $authContext = [], ?string $expectedFingerprint = null): string
     {
+        \App\Admission\AdmissionLeaseScope::assertWriter();
         $this->assertLegacy();
         $context = DeviceSnContext::fromArray($authContext);
         $token = ($context === [] ? '' : 'dsn_') . bin2hex(random_bytes($this->tokenLength));
@@ -121,6 +122,7 @@ LUA;
     /** Atomically rotate both identity and authentication provenance. */
     public function consumeSession(string $token): ?array
     {
+        \App\Admission\AdmissionLeaseScope::assertWriter();
         $this->assertLegacy();
         if ($this->legacyRefreshReplay?->enabled()) {
             throw new \RuntimeException('Atomic refresh replay must use the provenance-aware rotation boundary.', 503);
@@ -163,6 +165,7 @@ LUA;
      */
     public function delete(string $token): void
     {
+        \App\Admission\AdmissionLeaseScope::assertWriter();
         $this->assertLegacy();
         if ($this->legacyRefreshReplay?->enabled()) {
             $this->legacyRefreshReplay->revoke($token);
@@ -183,6 +186,7 @@ LUA;
      */
     public function deleteByUserId(int $userId): void
     {
+        \App\Admission\AdmissionLeaseScope::assertWriter();
         $this->assertLegacy();
         if ($this->legacyRefreshReplay?->enabled()) {
             $this->legacyRefreshReplay->revokeUser($userId, fn () => $this->removeUserKeys($userId));

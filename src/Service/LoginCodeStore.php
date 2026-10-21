@@ -79,6 +79,7 @@ final class LoginCodeStore
 
     private function resolveForSource(string $rawLoginCode, string $telemetrySource): LoginCodeLookupResult
     {
+        \App\Admission\AdmissionLeaseScope::assertWriter();
         if ($this->identityAuthority?->enabled()) throw new \RuntimeException('Local login-code authority is retired.', 503);
         $rawLoginCode = trim($rawLoginCode);
         if (strlen($rawLoginCode) < self::MINIMUM_LOGIN_CODE_LENGTH) {

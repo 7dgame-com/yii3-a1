@@ -84,6 +84,7 @@ LUA;
 
     private function consumeWindow(string $strategy, string $value, int $limit): void
     {
+        \App\Admission\AdmissionLeaseScope::assertWriter();
         try {
             $response = $this->redis->eval(
                 self::CONSUME_LUA, 1, 'device-sn:rate:' . $strategy . ':' . hash('sha256', $value),

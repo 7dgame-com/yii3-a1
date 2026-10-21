@@ -17,6 +17,7 @@ final class LegacyRefreshReplayService
     /** Null is only a truly unknown credential eligible for legacy QR lookup. */
     public function rotate(string $raw, array $requestContext, callable $authorize, callable $prepare): ?array
     {
+        \App\Admission\AdmissionLeaseScope::assertWriter();
         $key = $requestContext['idempotencyKey'] ?? '';
         if (!is_string($key) || strlen($key) > 256 || preg_match('/[^\x21-\x7e]/', $key)) {
             throw new \RuntimeException('Invalid Idempotency-Key.', 400);
@@ -56,6 +57,7 @@ final class LegacyRefreshReplayService
 
     public function create(string $raw, int $userId, array $context, ?string $expectedFingerprint = null): void
     {
+        \App\Admission\AdmissionLeaseScope::assertWriter();
         $this->accounts->withLockedUser($userId, function (array $user) use ($raw, $userId, $context, $expectedFingerprint): void {
             $fingerprint = LegacyRefreshAccountRepository::fingerprint($user);
             if ($expectedFingerprint !== null && !hash_equals($expectedFingerprint, $fingerprint)) {
@@ -67,6 +69,7 @@ final class LegacyRefreshReplayService
 
     public function revoke(string $raw): void
     {
+        \App\Admission\AdmissionLeaseScope::assertWriter();
         // The Redis script is the same linearization boundary as rotation.
         $this->store->revoke($raw);
     }
@@ -88,6 +91,7 @@ final class LegacyRefreshReplayService
 
     public function revokeUser(int $userId, callable $removeLegacyKeys): void
     {
+        \App\Admission\AdmissionLeaseScope::assertWriter();
         $this->accounts->withLockedUser($userId, function () use ($userId, $removeLegacyKeys): void {
             $this->store->advanceEpoch($userId);
             $removeLegacyKeys();

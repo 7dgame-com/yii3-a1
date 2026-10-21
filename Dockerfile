@@ -34,6 +34,10 @@ RUN composer install --no-interaction --prefer-dist
 # image, even for development: images are frequently promoted between stages.
 RUN mkdir -p /app/runtime
 
+# CI records the checked-out HEAD before building candidate images. Admission
+# reads this baked artifact, never a caller/header or runtime revision override.
+RUN if [ -f /app/GIT_COMMIT ]; then chmod 0444 /app/GIT_COMMIT; fi
+
 EXPOSE 8080
 
 ENTRYPOINT ["sh", "docker/entrypoint.sh"]

@@ -13,6 +13,7 @@ use Yiisoft\Router\Middleware\Router;
  */
 return [
     'middlewares' => [
+        \App\Middleware\AdmissionMiddleware::class,
         ErrorCatcher::class,
         CorsMiddleware::class,
         RequestBodyParser::class,
